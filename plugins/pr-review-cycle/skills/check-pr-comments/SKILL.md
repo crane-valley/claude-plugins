@@ -185,9 +185,21 @@ done
 
 ## Step 7: Re-fetch
 
-Run Step 1 again. A push can bring new comments while you work. Every thread
+Read every thread again, resolved ones included: a reviewer can reply on a
+thread after it was resolved, and the Step 1 filter would hide that reply.
+Run the Step 1 command with this `--jq` instead, and compare the comment ids
+with what you have already handled:
+
+```bash
+  --jq '.data.repository.pullRequest.reviewThreads.nodes[]
+        | {id, isResolved,
+           comments: [.comments.nodes[] | {id, author: .author.login, body}]}'
+```
+
+A comment you have not seen is new, wherever it sits; triage it, and reopen
+the discussion with a reply if it lands on a resolved thread. Every thread
 you handled must be resolved or (for a person's thread left open by
-convention) answered, and no new unanswered thread may remain. If new ones
+convention) answered, and no new unanswered comment may remain. If new ones
 appeared, triage them in this same run. Stop only when what is left is
 excluded by the user, blocked by permissions, or waiting on a reviewer's
 answer.

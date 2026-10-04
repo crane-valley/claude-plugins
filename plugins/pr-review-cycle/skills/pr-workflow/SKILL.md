@@ -87,7 +87,8 @@ gh api repos/OWNER/REPO/rules/branches/BASE --jq '.[] | select(.type == "pull_re
 ```
 
 A human gate exists when `reviewDecision` is `REVIEW_REQUIRED` or
-`CHANGES_REQUESTED`, a person is in `reviewRequests`, branch protection or a
+`CHANGES_REQUESTED`, a person or a team is in `reviewRequests`, branch
+protection or a
 ruleset requires approving reviews or code-owner review, a person has an
 unresolved thread on the PR, or the project's instructions say a person
 reviews every PR. The protection endpoint returns 404 when the branch is
@@ -121,7 +122,10 @@ human gate exists:
    end the turn with a one-line status. Bots take 5-10 minutes; the finished
    background command wakes you. Never run a long foreground sleep. With no
    AI review, wait for the checks instead (`gh pr checks N --watch` in the
-   background), then apply the human gate.
+   background), then apply the human gate. Right after creation the checks
+   may not be registered yet and `--watch` exits at once; re-run it until
+   the expected checks appear, and treat "no checks" as clean only once you
+   have established that the repository runs none on pull requests.
 
 ## Review Cycle
 
@@ -149,9 +153,10 @@ one. Nothing enforces the second read; take it.
 3. Triage every comment P0-P3 with the scale in the `check-pr-comments`
    skill (its Triage step defines it; do not invent a second scale).
 4. No findings, or only P3: reply briefly to each P3 thread (acknowledge, or
-   state the disagreement) and resolve it, re-fetch, and judge that read
-   against the Review Settling Window. Acknowledged P3 does not block; a
-   read with open P3 threads does not count.
+   state the disagreement). Resolve it if a bot opened it; a thread a person
+   opened follows the human-review rule above and stays for them. Re-fetch
+   and judge that read against the Review Settling Window. Acknowledged P3
+   does not block; a read with open bot P3 threads does not count.
 5. Valid findings outside the PR's scope: file an issue, or record them
    where the project's instructions say; do not grow the PR.
 
@@ -212,15 +217,22 @@ Check live state right before merging:
    Such findings have no thread to resolve: leave a PR comment stating the
    finding and its disposition, then fetch it back to confirm it exists.
 4. No human gate open: `reviewDecision` is `APPROVED` or empty, with no
-   pending requested reviewer.
+   pending requested reviewer or team.
 5. The head is still the commit you checked:
-   `gh pr view N --json headRefOid` matches local `HEAD`.
+   `gh pr view N --json headRefOid` matches local `HEAD`. Keep that SHA for
+   the merge command.
 6. The PR is open and mergeable: `gh pr view N --json state,mergeable,mergeStateStatus`.
 7. Use the repository's merge method. Read which are allowed
    (`gh repo view --json squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed`)
    and follow the project's convention or recent history; do not assume
    squash.
-8. Merge, for example `gh pr merge N --squash`.
+8. Merge bound to that SHA, so a push after your checks makes the merge
+   fail instead of merging unreviewed code, for example
+   `gh pr merge N --squash --match-head-commit <sha>`.
+9. Confirm the result: `gh pr view N --json state`. On a branch with a
+   merge queue the command only queues the PR; it is merged when `state` is
+   `MERGED`. Report a queued PR as queued, and do not clean up until it has
+   merged.
 
 ### Late Reviews
 
@@ -240,7 +252,10 @@ Fix CI failures, push, then return to the review cycle.
      like CI not triggering. Merge or rebase the base branch, resolve, push.
    - `UNKNOWN`: GitHub is still computing; re-check shortly.
 1. Failed checks and links:
-   `gh pr checks N --json name,state,bucket,link --jq '.[] | select(.bucket == "fail")'`
+   `gh pr checks N --json name,state,bucket,link --jq '.[] | select(.bucket == "fail" or .bucket == "cancel")'`
+   A cancelled check blocks like a failed one: find why it was cancelled
+   (a superseded run, a timeout, a manual cancel) and re-run it
+   (`gh run rerun <run-id>`) or fix the cause.
 2. Logs:
    - Head commit: `gh pr view N --json headRefOid -q .headRefOid`
    - Runs: `gh run list --commit <sha> --limit 10`
@@ -252,8 +267,8 @@ Fix CI failures, push, then return to the review cycle.
 
 ## After the Merge
 
-If merging was authorized and the user did not ask to keep the branch:
-switch off the merged branch, update the default branch, delete the local
+Once `gh pr view N --json state` shows `MERGED` (not merely queued), and
+unless the user asked to keep the branch: switch off the merged branch, update the default branch, delete the local
 branch, and remove the git worktree only if one was created for this PR.
 `gh pr merge --delete-branch` may fail on the local side when the branch is
 checked out in a worktree; delete the remote branch separately in that case
