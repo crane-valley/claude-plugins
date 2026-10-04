@@ -6,6 +6,11 @@ export type RateLimit = {
   resetsAt: EpochMs | null
 }
 
+export type CacheCountdown = {
+  sentAt: EpochMs
+  estimated: boolean
+}
+
 export type SessionSnapshot = {
   startedAt: EpochMs
   percent: number | null
@@ -20,7 +25,7 @@ export type SessionSnapshot = {
 declare module 'claude-code' {
   interface PluginState {
     'session-band': {
-      cachedAt: EpochMs | null
+      cache: CacheCountdown | null
       snapshot: SessionSnapshot | null
     }
   }

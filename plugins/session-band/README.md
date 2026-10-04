@@ -9,7 +9,7 @@ Limits   5h ###------- 31%  resets in 3h 9m    7d #--------- 6%  resets in 4d 19
 Context  #####--------------- 25%  252k / 1M   Messages 181k   System tools 34k   MCP tools 17k
 ```
 
-- Cache: time left before the main thread's prompt cache expires, counted from the start of the last main-thread request that read or wrote the cache, since generation time counts against the cache lifetime.
+- Cache: time left before the main thread's prompt cache expires, counted from the start of the last main-thread request that read or wrote the cache, since generation time counts against the cache lifetime. After a session is resumed or forked, the plugin has no request start time, only the time the last response finished (Claude Code's SessionStart field `seconds_since_last_response`), so the restored countdown is an estimate that can run long by up to that response's generation time and is shown with a leading tilde, for example `~4:00`, until the next main-thread response that reads or writes the cache replaces it with the exact countdown. When Claude Code reports on resume that the prompt cache has likely expired, the row shows `expired` instead.
 - Session: the session's API-priced cost and how long it has run.
 - Limits: each rate-limit window the API reports, with a usage bar and the time to its reset. Windows the plugin does not name (an organization spend limit, for example) show under their raw kind. The row is hidden until the first response of the session reports a reading.
 - Context: the context window fill, split by the largest categories in `/context`'s colors.

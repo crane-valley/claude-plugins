@@ -16,7 +16,7 @@ const SWATCH = String.fromCharCode(0x25a0)
 
 const LIMIT_NAMES: Record<string, string> = { five_hour: '5h', seven_day: '7d', spend_limit: 'Spend' }
 
-const cachedAt = atom({ plugin: 'session-band', key: 'cachedAt' } as const, null)
+const cache = atom({ plugin: 'session-band', key: 'cache' } as const, null)
 const snapshot = atom({ plugin: 'session-band', key: 'snapshot' } as const, null)
 
 const tokens = (n: number) => {
@@ -105,8 +105,13 @@ export const register: Register = (on, options) => {
 
   on('classic.SessionStart', async ($, e, next) => {
     if (e.seconds_since_last_response !== undefined) {
-      const at = (await $.clock.now()) - e.seconds_since_last_response * SECOND_MS
-      await update($, cachedAt, () => at)
+      const now = await $.clock.now()
+      // The payload times the end of the last response, not the start of its request, so the
+      // countdown can run long by that response's generation time until a live one replaces it.
+      const respondedAt = now - e.seconds_since_last_response * SECOND_MS
+      // The engine judges expiry against the TTL it requested, which the plugin is only told.
+      const sentAt = e.prompt_cache_likely_expired === true ? Math.min(respondedAt, now - ttlMs) : respondedAt
+      await update($, cache, () => ({ sentAt, estimated: true }))
     }
     const result = await next(e)
     // A resumed or forked conversation starts with empty session state and no session.start.
@@ -121,7 +126,7 @@ export const register: Register = (on, options) => {
     // Subagents cache their own prefixes; only the main thread's matters for the next prompt.
     if (e.agentId === undefined && result.usage !== null) {
       const cached = result.usage.cache_read_input_tokens + result.usage.cache_creation_input_tokens > 0
-      await update($, cachedAt, () => (cached ? sentAt : null))
+      await update($, cache, () => (cached ? { sentAt, estimated: false } : null))
     }
     return result
   })
@@ -131,7 +136,7 @@ export const register: Register = (on, options) => {
   on('session.compact', async ($, e, next) => {
     const result = await next(e)
     if (e.agentId === undefined && e.trigger !== 'precompute' && result.skip === undefined) {
-      await update($, cachedAt, () => null)
+      await update($, cache, () => null)
     }
     return result
   })
@@ -141,7 +146,7 @@ export const register: Register = (on, options) => {
     if (e.agent_id !== undefined) {
       return next(e)
     }
-    await update($, cachedAt, () => null)
+    await update($, cache, () => null)
     const result = await next(e)
     // The new model may have another context window; session.measure waits for its first response.
     await refresh($)
@@ -150,7 +155,7 @@ export const register: Register = (on, options) => {
 
   on('session.end', async ($, e, next) => {
     if (e.reason === 'clear') {
-      await update($, cachedAt, () => null)
+      await update($, cache, () => null)
       await update($, snapshot, () => null)
     }
     return next(e)
@@ -161,9 +166,9 @@ export const register: Register = (on, options) => {
     if (e.props.hasSurvey) {
       return below
     }
-    const at = await read($, cachedAt)
+    const c = await read($, cache)
     const s = await read($, snapshot)
-    if (at === null && s === null) {
+    if (c === null && s === null) {
       return below
     }
     const now = await $.clock.now()
@@ -175,12 +180,12 @@ export const register: Register = (on, options) => {
     )
     const rows: RenderElement[] = []
 
-    if (at !== null) {
-      const left = at + ttlMs - now
+    if (c !== null) {
+      const left = c.sentAt + ttlMs - now
       rows.push(
         <Box flexDirection="row" key="cache">
           {label('Cache')}
-          <Text color={left > 0 ? undefined : 'warning'}>{left > 0 ? clock(left) : 'expired'}</Text>
+          <Text color={left > 0 ? undefined : 'warning'}>{left > 0 ? `${c.estimated ? '~' : ''}${clock(left)}` : 'expired'}</Text>
         </Box>,
       )
     }
