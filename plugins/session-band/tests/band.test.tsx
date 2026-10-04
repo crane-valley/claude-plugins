@@ -126,9 +126,11 @@ test('drops the cache row after compaction', async ($, on) => {
   expect(await ui.find({ text: 'Cache' })).toBeUndefined()
 })
 
-test('drops the cache row after a model switch', async ($, on) => {
-  engine(on, usage([]))
+test('drops the cache row and re-reads the context window after a model switch', async ($, on) => {
+  const measured = usage([])
+  engine(on, measured)
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 60 })
+  measured.context = { tokens: 100_000, window: 200_000, percent: 50 }
   await $.classic.PostModelSwitch({
     from_model: 'model-a',
     to_model: 'model-b',
@@ -143,6 +145,7 @@ test('drops the cache row after a model switch', async ($, on) => {
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(await ui.find({ text: 'Cache' })).toBeUndefined()
+  expect(await ui.find({ text: /50%  100k \/ 200k/ })).toBeDefined()
 })
 
 test('counts the cache from the start of a request that touched the cache', async ($, on) => {

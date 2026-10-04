@@ -138,10 +138,14 @@ export const register: Register = (on, options) => {
 
   // Each model keeps its own prompt cache, so the first request after a switch writes a new one.
   on('classic.PostModelSwitch', async ($, e, next) => {
-    if (e.agent_id === undefined) {
-      await update($, cachedAt, () => null)
+    if (e.agent_id !== undefined) {
+      return next(e)
     }
-    return next(e)
+    await update($, cachedAt, () => null)
+    const result = await next(e)
+    // The new model may have another context window; session.measure waits for its first response.
+    await refresh($)
+    return result
   })
 
   on('session.end', async ($, e, next) => {
