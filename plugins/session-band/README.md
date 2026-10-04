@@ -1,0 +1,43 @@
+# session-band
+
+Session figures in the band directly above the Claude Code prompt, on the terminal and in the desktop app's Code tab:
+
+```
+Cache    54:12
+Session  $9.70   1h 32m elapsed
+Limits   5h ###------- 31%  resets in 3h 9m    7d #--------- 6%  resets in 4d 19h
+Context  #####--------------- 25%  252k / 1M   Messages 181k   System tools 34k   MCP tools 17k
+```
+
+- Cache: time left before the main thread's prompt cache expires, counted from the last main-thread response.
+- Session: the session's API-priced cost and how long it has run.
+- Limits: each rate-limit window the API reports, with a usage bar and the time to its reset. Windows the plugin does not name (an organization spend limit, for example) show under their raw kind. The row is hidden until the first response of the session reports a reading.
+- Context: the context window fill, split by the largest categories in `/context`'s colors.
+
+## Requirements
+
+Function hooks are an early-access Claude Code API that may change between releases without notice. This plugin was verified with Claude Code 2.1.286.
+
+## Install
+
+```sh
+claude plugin marketplace add crane-valley/claude-plugins
+claude plugin install session-band@crane-valley
+```
+
+## Options
+
+Set them in `/config` or under `pluginConfigs` in `settings.json`.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `cacheTtl` | `5m` | The prompt cache TTL your main thread uses (`5m` or `1h`). The plugin cannot read it from Claude Code, so a wrong value shows a wrong countdown. |
+| `showCost` | `true` | Show the session's cost. On a subscription this is the API price of the usage, not what you are billed. |
+
+## Sharing the band
+
+The band above the prompt is one slot shared by every plugin. session-band appends its rows to whatever the plugins beneath it drew, so other plugins' rows stay visible; a plugin that draws the band without calling `next(e)` hides the ones beneath it.
+
+## License
+
+MIT

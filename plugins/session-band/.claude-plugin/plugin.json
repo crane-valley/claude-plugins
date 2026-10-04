@@ -1,0 +1,23 @@
+{
+  "name": "session-band",
+  "version": "0.1.0",
+  "description": "Prompt cache countdown, session cost, rate limits and context window usage in the band above the prompt",
+  "author": { "name": "Crane Valley LLC" },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "cacheTtl": {
+      "type": "string",
+      "title": "Prompt cache TTL",
+      "description": "The cache TTL your main thread uses; the plugin cannot read it from the engine",
+      "options": ["5m", "1h"],
+      "default": "5m"
+    },
+    "showCost": {
+      "type": "boolean",
+      "title": "Show session cost",
+      "description": "Show the session's API-priced cost; on a subscription it is not what you are billed",
+      "default": true
+    }
+  }
+}
