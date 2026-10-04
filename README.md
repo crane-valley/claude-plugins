@@ -7,6 +7,7 @@ A Claude Code plugin marketplace maintained by Crane Valley LLC.
 ```sh
 claude plugin marketplace add crane-valley/claude-plugins
 claude plugin install session-band@crane-valley
+claude plugin install pr-review-cycle@crane-valley
 ```
 
 ## Plugins
@@ -14,6 +15,7 @@ claude plugin install session-band@crane-valley
 | Plugin | What it does |
 | --- | --- |
 | [session-band](plugins/session-band) | Prompt cache countdown, session cost, rate limits and context window usage in the band above the prompt |
+| [pr-review-cycle](plugins/pr-review-cycle) | Takes a GitHub pull request through review: finds the active AI and human reviewers, answers every comment, waits for reviews to settle, and merges only when asked |
 
 ## Development
 

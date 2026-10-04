@@ -41,5 +41,8 @@ jobs:
         run: |
           for dir in plugins/*/; do
             claude plugin validate "$dir"
-            claude plugin test "$dir"
+            # `claude plugin test` exits 1 on a plugin without a hooks module (skills-only).
+            if [ -f "$dir/hooks/hooks.json" ]; then
+              claude plugin test "$dir"
+            fi
           done

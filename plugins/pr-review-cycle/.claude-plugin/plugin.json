@@ -1,0 +1,8 @@
+{
+  "name": "pr-review-cycle",
+  "version": "0.1.0",
+  "description": "Take a GitHub pull request through its review cycle: discover the AI and human reviewers the repository has, triage and answer every comment, wait for reviews to settle, and merge only when asked",
+  "author": { "name": "Crane Valley LLC", "email": "oss@crane-valley.co.jp" },
+  "license": "MIT",
+  "keywords": ["github", "pull-request", "code-review", "workflow"]
+}
