@@ -2,7 +2,7 @@
   "name": "session-band",
   "version": "0.1.0",
   "description": "Prompt cache countdown, session cost, rate limits and context window usage in the band above the prompt",
-  "author": { "name": "Crane Valley LLC" },
+  "author": { "name": "Crane Valley LLC", "email": "oss@crane-valley.co.jp" },
   "license": "MIT",
   "types": "./types/index.d.ts",
   "userConfig": {

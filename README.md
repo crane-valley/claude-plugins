@@ -26,6 +26,10 @@ claude plugin test plugins/<name>
 
 For editor types, run `/plugin-types plugins/<name>/.claude/types` in a Claude Code session; the folder is git-ignored.
 
+## Contact
+
+Use GitHub Issues for bugs and requests. For anything that should not be public, email oss@crane-valley.co.jp; report security issues as described in [SECURITY.md](SECURITY.md).
+
 ## License
 
 MIT
