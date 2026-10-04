@@ -52,14 +52,23 @@ read OWNER REPO < <(gh repo view --json owner,name --jq '.owner.login + " " + .n
 gh api graphql --paginate \
   -F owner="$OWNER" -F name="$REPO" -F pr=N \
   -F query=@"$SKILL/queries/fetch-threads.graphql" \
-  --jq '.data.repository.pullRequest.reviewThreads.nodes[]
-        | select(.isResolved == false)
-        | {id, viewerCanReply, viewerCanResolve,
-           comments: [.comments.nodes[] | {author: .author.login, path, line, body}]}
-          + (if .comments.commentsPageInfo.hasNextPage
-             then {truncated: true, commentsCursor: .comments.commentsPageInfo.endCursor}
-             else {} end)'
+  --jq '{headRefOid: .data.repository.pullRequest.headRefOid,
+         threads: [.data.repository.pullRequest.reviewThreads.nodes[]
+           | {id, isResolved, viewerCanReply, viewerCanResolve,
+              comments: [.comments.nodes[]
+                | {id, author: .author.login, path, line, body, updatedAt, lastEditedAt}]}
+             + (if .comments.commentsPageInfo.hasNextPage
+                then {truncated: true, commentsCursor: .comments.commentsPageInfo.endCursor}
+                else {} end)]}'
 ```
+
+This prints one object per page of threads, so a PR with no threads still
+prints `{"headRefOid": ..., "threads": []}`: a successful empty read. No
+output at all means the fetch failed; treat that as unknown, never as zero
+threads.
+
+Triage the threads whose `isResolved` is false. Keep the whole output,
+resolved threads included, as the baseline that Step 7 compares against.
 
 Filter with gh's built-in `--jq`; a standalone `jq` may not be installed.
 To inspect the raw payload, drop `--jq`, add `--slurp` (without it,
@@ -81,7 +90,8 @@ gh api graphql --paginate \
   -F threadId='THREAD_NODE_ID' \
   -F endCursor='COMMENTS_CURSOR_FROM_STEP_1' \
   -F query=@"$SKILL/queries/fetch-thread-comments.graphql" \
-  --jq '.data.node.comments.nodes[] | {author: .author.login, path, line, body}'
+  --jq '.data.node.comments.nodes[]
+        | {id, author: .author.login, path, line, body, updatedAt, lastEditedAt}'
 ```
 
 This is a separate document because `gh api graphql --paginate` drives one
@@ -185,19 +195,13 @@ done
 
 ## Step 7: Re-fetch
 
-Read every thread again, resolved ones included: a reviewer can reply on a
-thread after it was resolved, and the Step 1 filter would hide that reply.
-Run the Step 1 command with this `--jq` instead, and compare the comment ids
-with what you have already handled:
-
-```bash
-  --jq '.data.repository.pullRequest.reviewThreads.nodes[]
-        | {id, isResolved,
-           comments: [.comments.nodes[] | {id, author: .author.login, body}]}'
-```
-
-A comment you have not seen is new, wherever it sits; triage it, and reopen
-the discussion with a reply if it lands on a resolved thread. Every thread
+Run the Step 1 command again and complete any truncated thread with Step
+1b, then compare every thread, resolved ones included, with the baseline: a
+reviewer can reply on a thread after it was resolved, or edit a comment
+(the id stays the same). A comment id missing from the baseline is new; a
+known id with a later `updatedAt` or `lastEditedAt` was edited. Triage both
+wherever they sit, and reopen the discussion with a reply if one lands on a
+resolved thread. Every thread
 you handled must be resolved or (for a person's thread left open by
 convention) answered, and no new unanswered comment may remain. If new ones
 appeared, triage them in this same run. Stop only when what is left is

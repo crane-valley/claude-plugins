@@ -18,6 +18,7 @@ query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
             commentsPageInfo: pageInfo { hasNextPage endCursor }
             nodes {
               id databaseId author { login } body path line
+              updatedAt lastEditedAt
             }
           }
         }

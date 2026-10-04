@@ -8,6 +8,7 @@ query($threadId: ID!, $endCursor: String) {
       comments(first: 100, after: $endCursor) {
         nodes {
           id databaseId author { login } body path line
+          updatedAt lastEditedAt
         }
         pageInfo { hasNextPage endCursor }
       }

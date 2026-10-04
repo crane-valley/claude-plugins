@@ -86,9 +86,10 @@ gh api repos/OWNER/REPO/branches/BASE/protection --jq '.required_pull_request_re
 gh api repos/OWNER/REPO/rules/branches/BASE --jq '.[] | select(.type == "pull_request")'
 ```
 
-A human gate exists when `reviewDecision` is `REVIEW_REQUIRED` or
-`CHANGES_REQUESTED`, a person or a team is in `reviewRequests`, branch
-protection or a
+A human gate exists when `reviewDecision` is `REVIEW_REQUIRED`, a person
+whose review in `latestReviews` is `CHANGES_REQUESTED` has not yet
+approved (a bot's change request is handled like its other findings), a
+person or a team is in `reviewRequests`, branch protection or a
 ruleset requires approving reviews or code-owner review, a person has an
 unresolved thread on the PR, or the project's instructions say a person
 reviews every PR. The protection endpoint returns 404 when the branch is
@@ -157,13 +158,19 @@ one. Nothing enforces the second read; take it.
    opened follows the human-review rule above and stays for them. Re-fetch
    and judge that read against the Review Settling Window. Acknowledged P3
    does not block; a read with open bot P3 threads does not count.
-5. Valid findings outside the PR's scope: file an issue, or record them
+5. Findings in review bodies or issue comments (bots often put them there
+   instead of in a thread) have no thread to reply to: after triage, post
+   one PR comment stating each finding and its disposition, then fetch it
+   back to confirm it exists. Do this in every round, not only before a
+   merge.
+6. Valid findings outside the PR's scope: file an issue, or record them
    where the project's instructions say; do not grow the PR.
 
 ### Round N (fix cycle)
 
 1. Fix P0-P2 findings, run checks, commit, push.
-2. Reply to and resolve each thread with `check-pr-comments`.
+2. Reply to and resolve each thread with `check-pr-comments`, and answer
+   review-body and issue-comment findings as in Round 1 step 5.
 3. Re-request only the active bots whose known behaviour needs it (above).
 4. Background `sleep 600`, end the turn.
 5. A bot that stays silent through a full wait after a push it would have
@@ -214,10 +221,10 @@ Check live state right before merging:
    gh api repos/OWNER/REPO/pulls/N/reviews --paginate
    gh api repos/OWNER/REPO/issues/N/comments --paginate
    ```
-   Such findings have no thread to resolve: leave a PR comment stating the
-   finding and its disposition, then fetch it back to confirm it exists.
-4. No human gate open: `reviewDecision` is `APPROVED` or empty, with no
-   pending requested reviewer or team.
+   Each must already have its disposition comment (Round 1 step 5).
+4. No human gate open: no condition under Human reviewers holds.
+   `reviewDecision` is `APPROVED`, empty, or `CHANGES_REQUESTED` only from a
+   bot whose findings are all handled.
 5. The head is still the commit you checked:
    `gh pr view N --json headRefOid` matches local `HEAD`. Keep that SHA for
    the merge command.
