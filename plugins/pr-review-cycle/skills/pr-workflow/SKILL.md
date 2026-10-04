@@ -83,7 +83,7 @@ follow them; when unsure, do not re-request.
 ```bash
 gh pr view N --json reviewDecision,reviewRequests,latestReviews,mergeStateStatus
 gh api repos/OWNER/REPO/branches/BASE/protection --jq '.required_pull_request_reviews'
-gh api repos/OWNER/REPO/rules/branches/BASE --jq '.[] | select(.type == "pull_request")'
+gh api repos/OWNER/REPO/rules/branches/BASE --paginate --jq '.[] | select(.type == "pull_request")'
 ```
 
 A human gate exists when `reviewDecision` is `REVIEW_REQUIRED`, a person

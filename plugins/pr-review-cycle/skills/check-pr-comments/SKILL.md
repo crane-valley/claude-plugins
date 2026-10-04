@@ -54,7 +54,9 @@ gh api graphql --paginate \
   -F query=@"$SKILL/queries/fetch-threads.graphql" \
   --jq '{headRefOid: .data.repository.pullRequest.headRefOid,
          threads: [.data.repository.pullRequest.reviewThreads.nodes[]
-           | {id, isResolved, viewerCanReply, viewerCanResolve,
+           | {id, isResolved, isOutdated, viewerCanReply, viewerCanResolve,
+              resolvedBy: .resolvedBy.login,
+              path, line, startLine, originalLine, diffSide,
               comments: [.comments.nodes[]
                 | {id, author: .author.login, path, line, body, updatedAt, lastEditedAt}]}
              + (if .comments.commentsPageInfo.hasNextPage
@@ -157,7 +159,10 @@ A gh call can fail without visible output, so a reply you think you posted
 may not exist.
 
 - Single-quote the body. In double quotes, backticks become command
-  substitution and `$names` expand, corrupting the request.
+  substitution and `$names` expand, corrupting the request. An apostrophe
+  inside the body ends the quoting: write it as `'\''` in Bash
+  (`'the user'\''s cache'`) and as `''` in PowerShell
+  (`'the user''s cache'`).
 - The `--jq` output must be a non-empty ID; otherwise retry with a fixed body.
 - Never pipe gh output through `head` or `tail`; truncation hides the error.
 
@@ -196,7 +201,9 @@ done
 ## Step 7: Re-fetch
 
 Run the Step 1 command again and complete any truncated thread with Step
-1b, then compare every thread, resolved ones included, with the baseline: a
+1b, then compare every thread, resolved ones included, with the baseline
+plus the reply ids Step 4 returned in this run (your own replies are not new
+comments): a
 reviewer can reply on a thread after it was resolved, or edit a comment
 (the id stays the same). A comment id missing from the baseline is new; a
 known id with a later `updatedAt` or `lastEditedAt` was edited. Triage both
