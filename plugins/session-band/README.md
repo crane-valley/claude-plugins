@@ -16,7 +16,7 @@ Context  #####--------------- 25%  252k / 1M   Messages 181k   System tools 34k 
 
 ## Requirements
 
-Function hooks are an early-access Claude Code API that may change between releases without notice. This plugin was verified with Claude Code 2.1.286.
+Function hooks are an early-access Claude Code API that may change between releases without notice. CI tests this plugin on Claude Code 2.1.288. If the band does not appear, update Claude Code; a build where function hooks are still off by default needs `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` in its environment.
 
 ## Install
 

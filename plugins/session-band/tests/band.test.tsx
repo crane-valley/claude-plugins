@@ -15,6 +15,7 @@ const engine = (on: On, measured: SessionUsage) => {
   on('session.usage', () => ({ value: measured }))
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('classic.SessionStart', () => ({}))
+  on('classic.PostModelSwitch', () => ({}))
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
     const { Box } = $.ui.resolve(e)
     return <Box />
@@ -119,4 +120,54 @@ test('drops the cache row after compaction', async ($, on) => {
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(await ui.find({ text: 'Cache' })).toBeUndefined()
+})
+
+test('drops the cache row after a model switch', async ($, on) => {
+  engine(on, usage([]))
+  await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 60 })
+  await $.classic.PostModelSwitch({
+    from_model: 'model-a',
+    to_model: 'model-b',
+    requested_model: 'model-b',
+    source: 'command',
+    context_tokens: 1000,
+    prompt_cache_warm: true,
+    cache_ttl: '5m',
+    estimated_cache_write_usd: 0.01,
+    pricing: 'catalog',
+  })
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ text: 'Cache' })).toBeUndefined()
+})
+
+test('starts the cache countdown only from a response that touched the cache', async ($, on) => {
+  engine(on, usage([]))
+  let cacheTokens = 0
+  on('turn.step', async function* () {
+    return {
+      turnId: 't',
+      index: 0,
+      answer: '',
+      toolUses: [],
+      stopReason: 'end_turn' as const,
+      usage: { model: 'm', input_tokens: 10, output_tokens: 10, cache_read_input_tokens: cacheTokens, cache_creation_input_tokens: 0 },
+    }
+  })
+  const respond = async (tokens: number) => {
+    cacheTokens = tokens
+    const step = $.turn.step({ turnId: 't', index: 0, model: 'm', messageCount: 1 })
+    for await (const _ of step) {
+    }
+    await step.result
+  }
+
+  await respond(0)
+  const cold = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await cold.find({ text: 'Cache' })).toBeUndefined()
+  await cold.unmount()
+
+  await respond(5000)
+  const warm = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await warm.find({ text: '5:00' })).toBeDefined()
 })

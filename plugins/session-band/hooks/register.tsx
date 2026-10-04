@@ -121,10 +121,17 @@ export const register: Register = (on, options) => {
     const result = yield* next(e)
     // Subagents cache their own prefixes; only the main thread's matters for the next prompt.
     if (e.agentId === undefined && result.usage !== null) {
+      const cached = result.usage.cache_read_input_tokens + result.usage.cache_creation_input_tokens > 0
       const now = await $.clock.now()
-      await update($, lastResponseAt, () => now)
+      await update($, lastResponseAt, () => (cached ? now : null))
     }
     return result
+  })
+
+  // Each model keeps its own prompt cache, so the first request after a switch writes a new one.
+  on('classic.PostModelSwitch', async ($, e, next) => {
+    await update($, lastResponseAt, () => null)
+    return next(e)
   })
 
   on('session.end', async ($, e, next) => {
