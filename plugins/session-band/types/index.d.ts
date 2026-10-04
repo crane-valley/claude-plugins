@@ -20,7 +20,7 @@ export type SessionSnapshot = {
 declare module 'claude-code' {
   interface PluginState {
     'session-band': {
-      lastResponseAt: EpochMs | null
+      cachedAt: EpochMs | null
       snapshot: SessionSnapshot | null
     }
   }

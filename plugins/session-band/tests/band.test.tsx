@@ -11,7 +11,7 @@ const BAND = {
 
 // The test's hooks stand for the engine, which draws nothing of its own in the band.
 const engine = (on: On, measured: SessionUsage) => {
-  mock.clock(on)
+  const clock = mock.clock(on)
   on('session.usage', () => ({ value: measured }))
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('classic.SessionStart', () => ({}))
@@ -20,6 +20,7 @@ const engine = (on: On, measured: SessionUsage) => {
     const { Box } = $.ui.resolve(e)
     return <Box />
   })
+  return clock
 }
 
 const usage = (rateLimits: SessionRateLimit[]): SessionUsage => ({
@@ -141,10 +142,11 @@ test('drops the cache row after a model switch', async ($, on) => {
   expect(await ui.find({ text: 'Cache' })).toBeUndefined()
 })
 
-test('starts the cache countdown only from a response that touched the cache', async ($, on) => {
-  engine(on, usage([]))
+test('counts the cache from the start of a request that touched the cache', async ($, on) => {
+  const clock = engine(on, usage([]))
   let cacheTokens = 0
   on('turn.step', async function* () {
+    await clock.advance(60_000)
     return {
       turnId: 't',
       index: 0,
@@ -169,5 +171,19 @@ test('starts the cache countdown only from a response that touched the cache', a
 
   await respond(5000)
   const warm = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await warm.find({ text: '5:00' })).toBeDefined()
+  expect(await warm.find({ text: '4:00' })).toBeDefined()
+})
+
+test('hides a rate-limit window once it has reset', async ($, on) => {
+  const measured = usage([{ kind: 'five_hour', percentUsed: 80, resetsAt: '1970-01-01T00:01:00Z' }])
+  const clock = engine(on, measured)
+  await $.session.measure({ context: measured.context, rateLimits: measured.rateLimits, changed: ['rateLimits'] })
+
+  const before = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await before.find({ text: /^5h / })).toBeDefined()
+  await before.unmount()
+
+  await clock.advance(120_000)
+  const after = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await after.find({ text: 'Limits' })).toBeUndefined()
 })

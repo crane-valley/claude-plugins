@@ -16,7 +16,7 @@ const SWATCH = String.fromCharCode(0x25a0)
 
 const LIMIT_NAMES: Record<string, string> = { five_hour: '5h', seven_day: '7d', spend_limit: 'Spend' }
 
-const lastResponseAt = atom({ plugin: 'session-band', key: 'lastResponseAt' } as const, null)
+const cachedAt = atom({ plugin: 'session-band', key: 'cachedAt' } as const, null)
 const snapshot = atom({ plugin: 'session-band', key: 'snapshot' } as const, null)
 
 const tokens = (n: number) => {
@@ -106,10 +106,10 @@ export const register: Register = (on, options) => {
   on('classic.SessionStart', async ($, e, next) => {
     if (e.source === 'compact') {
       // Compaction replaces the cached prefix; the next request writes a new one.
-      await update($, lastResponseAt, () => null)
+      await update($, cachedAt, () => null)
     } else if (e.seconds_since_last_response !== undefined) {
       const at = (await $.clock.now()) - e.seconds_since_last_response * SECOND_MS
-      await update($, lastResponseAt, () => at)
+      await update($, cachedAt, () => at)
     }
     const result = await next(e)
     // A resumed or forked conversation starts with empty session state and no session.start.
@@ -118,25 +118,26 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.step', async function* ($, e, next) {
+    // The cache lifetime runs from the start of the request, so generation time counts against it.
+    const sentAt = await $.clock.now()
     const result = yield* next(e)
     // Subagents cache their own prefixes; only the main thread's matters for the next prompt.
     if (e.agentId === undefined && result.usage !== null) {
       const cached = result.usage.cache_read_input_tokens + result.usage.cache_creation_input_tokens > 0
-      const now = await $.clock.now()
-      await update($, lastResponseAt, () => (cached ? now : null))
+      await update($, cachedAt, () => (cached ? sentAt : null))
     }
     return result
   })
 
   // Each model keeps its own prompt cache, so the first request after a switch writes a new one.
   on('classic.PostModelSwitch', async ($, e, next) => {
-    await update($, lastResponseAt, () => null)
+    await update($, cachedAt, () => null)
     return next(e)
   })
 
   on('session.end', async ($, e, next) => {
     if (e.reason === 'clear') {
-      await update($, lastResponseAt, () => null)
+      await update($, cachedAt, () => null)
       await update($, snapshot, () => null)
     }
     return next(e)
@@ -147,7 +148,7 @@ export const register: Register = (on, options) => {
     if (e.props.hasSurvey) {
       return below
     }
-    const at = await read($, lastResponseAt)
+    const at = await read($, cachedAt)
     const s = await read($, snapshot)
     if (at === null && s === null) {
       return below
@@ -182,12 +183,13 @@ export const register: Register = (on, options) => {
         </Box>,
       )
 
-      if (s.limits.length > 0) {
+      const live = s.limits.filter(l => l.resetsAt === null || l.resetsAt > now)
+      if (live.length > 0) {
         rows.push(
           <Box flexDirection="row" key="limits">
             {label('Limits')}
             <Box flexDirection="row" flexWrap="wrap" columnGap={4}>
-              {s.limits.map(l => (
+              {live.map(l => (
                 <Text>
                   {`${LIMIT_NAMES[l.kind] ?? l.kind} `}
                   <Text color={severity(l.percentUsed)} dimColor={severity(l.percentUsed) === undefined}>{bar(l.percentUsed)}</Text>
