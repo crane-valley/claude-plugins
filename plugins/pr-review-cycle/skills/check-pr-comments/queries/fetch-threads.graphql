@@ -1,0 +1,29 @@
+query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $pr) {
+      headRefOid
+      reviewThreads(first: 100, after: $endCursor) {
+        nodes {
+          id isResolved isOutdated viewerCanResolve viewerCanReply
+          path line startLine originalLine diffSide
+          resolvedBy { login }
+          comments(first: 100) {
+            # The alias is load-bearing. `gh api --paginate` scans the response for
+            # any object keyed `pageInfo` and stops at the first one carrying both
+            # hasNextPage and endCursor -- nesting is not considered. Named
+            # `pageInfo`, this block would drive the outer reviewThreads loop with a
+            # comment cursor: verified on gh 2.81.0 to repeat one thread and drop
+            # two others. Do not rename it back, and keep reviewThreads.pageInfo the
+            # only `pageInfo` key in this document.
+            commentsPageInfo: pageInfo { hasNextPage endCursor }
+            nodes {
+              id databaseId author { login __typename } body path line
+              updatedAt lastEditedAt
+            }
+          }
+        }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}

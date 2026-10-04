@@ -12,6 +12,12 @@
       "source": "./plugins/session-band",
       "description": "Prompt cache countdown, session cost, rate limits and context window usage in the band above the prompt.",
       "license": "MIT"
+    },
+    {
+      "name": "pr-review-cycle",
+      "source": "./plugins/pr-review-cycle",
+      "description": "Take a GitHub pull request through its review cycle: AI and human reviewers discovered per repository, every comment triaged and answered, merge only when asked.",
+      "license": "MIT"
     }
   ]
 }

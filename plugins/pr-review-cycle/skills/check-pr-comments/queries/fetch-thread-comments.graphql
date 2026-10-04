@@ -1,0 +1,17 @@
+# Every comment on ONE review thread, for threads that fetch-threads.graphql
+# reported as truncated (commentsPageInfo.hasNextPage == true).
+# Comment fields match fetch-threads.graphql so the result is a drop-in
+# replacement for that thread's truncated comment list.
+query($threadId: ID!, $endCursor: String) {
+  node(id: $threadId) {
+    ... on PullRequestReviewThread {
+      comments(first: 100, after: $endCursor) {
+        nodes {
+          id databaseId author { login __typename } body path line
+          updatedAt lastEditedAt
+        }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}
