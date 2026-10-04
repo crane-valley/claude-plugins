@@ -104,10 +104,7 @@ export const register: Register = (on, options) => {
   })
 
   on('classic.SessionStart', async ($, e, next) => {
-    if (e.source === 'compact') {
-      // Compaction replaces the cached prefix; the next request writes a new one.
-      await update($, cachedAt, () => null)
-    } else if (e.seconds_since_last_response !== undefined) {
+    if (e.seconds_since_last_response !== undefined) {
       const at = (await $.clock.now()) - e.seconds_since_last_response * SECOND_MS
       await update($, cachedAt, () => at)
     }
@@ -129,9 +126,21 @@ export const register: Register = (on, options) => {
     return result
   })
 
+  // Compaction replaces the cached prefix. classic SessionStart(compact) also fires for a
+  // subagent's compaction with no agent fields (anthropics/claude-code#91910); this event has agentId.
+  on('session.compact', async ($, e, next) => {
+    const result = await next(e)
+    if (e.agentId === undefined && e.trigger !== 'precompute' && result.skip === undefined) {
+      await update($, cachedAt, () => null)
+    }
+    return result
+  })
+
   // Each model keeps its own prompt cache, so the first request after a switch writes a new one.
   on('classic.PostModelSwitch', async ($, e, next) => {
-    await update($, cachedAt, () => null)
+    if (e.agent_id === undefined) {
+      await update($, cachedAt, () => null)
+    }
     return next(e)
   })
 

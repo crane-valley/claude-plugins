@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { On, SessionRateLimit, SessionUsage } from 'claude-code'
+import type { On, SessionMessage, SessionRateLimit, SessionUsage } from 'claude-code'
 
 const SURFACES = ['terminal', 'desktop'] as const
 
@@ -16,12 +16,15 @@ const engine = (on: On, measured: SessionUsage) => {
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('classic.SessionStart', () => ({}))
   on('classic.PostModelSwitch', () => ({}))
+  on('session.compact', () => ({ messages: SUMMARY }))
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
     const { Box } = $.ui.resolve(e)
     return <Box />
   })
   return clock
 }
+
+const SUMMARY: SessionMessage[] = [{ role: 'user', text: 'summary', toolUses: [] }]
 
 const usage = (rateLimits: SessionRateLimit[]): SessionUsage => ({
   startedAt: 0,
@@ -117,7 +120,7 @@ test('fills the session rows on resume before any new response', async ($, on) =
 test('drops the cache row after compaction', async ($, on) => {
   engine(on, usage([]))
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 60 })
-  await $.classic.SessionStart({ source: 'compact' })
+  await $.session.compact({ trigger: 'auto', messages: SUMMARY })
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(await ui.find({ text: 'Cache' })).toBeUndefined()
@@ -186,4 +189,25 @@ test('hides a rate-limit window once it has reset', async ($, on) => {
   await clock.advance(120_000)
   const after = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(await after.find({ text: 'Limits' })).toBeUndefined()
+})
+
+test('keeps the cache row through a subagent compaction or model switch', async ($, on) => {
+  engine(on, usage([]))
+  await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 60 })
+  await $.session.compact({ trigger: 'auto', messages: SUMMARY, agentId: 'sub' })
+  await $.classic.PostModelSwitch({
+    agent_id: 'sub',
+    from_model: 'model-a',
+    to_model: 'model-b',
+    requested_model: null,
+    source: 'auto',
+    context_tokens: 1000,
+    prompt_cache_warm: true,
+    cache_ttl: '5m',
+    estimated_cache_write_usd: 0.01,
+    pricing: 'catalog',
+  })
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ text: '4:00' })).toBeDefined()
 })

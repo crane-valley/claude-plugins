@@ -9,7 +9,7 @@ Limits   5h ###------- 31%  resets in 3h 9m    7d #--------- 6%  resets in 4d 19
 Context  #####--------------- 25%  252k / 1M   Messages 181k   System tools 34k   MCP tools 17k
 ```
 
-- Cache: time left before the main thread's prompt cache expires, counted from the last main-thread response.
+- Cache: time left before the main thread's prompt cache expires, counted from the start of the last main-thread request that read or wrote the cache, since generation time counts against the cache lifetime.
 - Session: the session's API-priced cost and how long it has run.
 - Limits: each rate-limit window the API reports, with a usage bar and the time to its reset. Windows the plugin does not name (an organization spend limit, for example) show under their raw kind. The row is hidden until the first response of the session reports a reading.
 - Context: the context window fill, split by the largest categories in `/context`'s colors.
