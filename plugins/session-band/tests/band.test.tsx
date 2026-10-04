@@ -64,7 +64,7 @@ test('draws the cache, session, limits and context rows on terminal and desktop'
 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...BAND, surface })
-    expect(await ui.find({ text: '~4:00' })).toBeDefined()
+    expect(await ui.find({ text: '4:00' })).toBeDefined()
     expect(await ui.find({ text: /\$1\.50/ })).toBeDefined()
     expect(await ui.find({ text: /^5h / })).toBeDefined()
     expect(await ui.find({ text: /25%/ })).toBeDefined()
@@ -96,7 +96,7 @@ test('counts the cache down from the configured TTL', { options: { cacheTtl: '1h
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 60 })
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await ui.find({ text: '~59:00' })).toBeDefined()
+  expect(await ui.find({ text: '59:00' })).toBeDefined()
 })
 
 test('keeps the filled share of the context bar when the breakdown is missing', async ($, on) => {
@@ -212,7 +212,7 @@ test('keeps the cache row through a subagent compaction or model switch', async 
   })
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await ui.find({ text: '~4:00' })).toBeDefined()
+  expect(await ui.find({ text: '4:00' })).toBeDefined()
 })
 
 test('marks a countdown restored on resume as an estimate until a cached response', async ($, on) => {
@@ -231,7 +231,8 @@ test('marks a countdown restored on resume as an estimate until a cached respons
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 60 })
 
   const resumed = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await resumed.find({ text: '~4:00' })).toBeDefined()
+  expect(await resumed.find({ text: '4:00' })).toBeDefined()
+  expect(await resumed.find({ text: /estimated/ })).toBeDefined()
   await resumed.unmount()
 
   const step = $.turn.step({ turnId: 't', index: 0, model: 'm', messageCount: 1 })
@@ -240,6 +241,7 @@ test('marks a countdown restored on resume as an estimate until a cached respons
   await step.result
   const live = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(await live.find({ text: '4:00' })).toBeDefined()
+  expect(await live.find({ text: /estimated/ })).toBeUndefined()
 })
 
 test('shows the cache as expired on resume when the engine says it likely expired', { options: { cacheTtl: '1h' } }, async ($, on) => {

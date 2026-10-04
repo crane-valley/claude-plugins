@@ -185,7 +185,8 @@ export const register: Register = (on, options) => {
       rows.push(
         <Box flexDirection="row" key="cache">
           {label('Cache')}
-          <Text color={left > 0 ? undefined : 'warning'}>{left > 0 ? `${c.estimated ? '~' : ''}${clock(left)}` : 'expired'}</Text>
+          <Text color={left > 0 ? undefined : 'warning'}>{left > 0 ? clock(left) : 'expired'}</Text>
+          {left > 0 && c.estimated ? <Text dimColor>{'  estimated'}</Text> : null}
         </Box>,
       )
     }
