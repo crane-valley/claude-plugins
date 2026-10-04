@@ -2,7 +2,7 @@
 
 Session figures in the band directly above the Claude Code prompt, on the terminal and in the desktop app's Code tab:
 
-![session-band in the desktop app's Code tab](../../docs/images/session-band.png)
+![session-band in the desktop app's Code tab](images/session-band.png)
 
 - Cache: time left before the main thread's prompt cache expires, counted from the start of the last main-thread request that read or wrote the cache, since generation time counts against the cache lifetime. After a session is resumed or forked, the plugin has no request start time, only the time the last response finished (Claude Code's SessionStart field `seconds_since_last_response`), so the restored countdown is an estimate that can run long by up to that response's generation time and is shown followed by the word `estimated` in dim text, for example `4:00  estimated`, until the next main-thread response that reads or writes the cache replaces it with the exact countdown. When Claude Code reports on resume that the prompt cache has likely expired, the row shows `expired` instead.
 - Session: the session's API-priced cost and how long it has run.
