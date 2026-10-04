@@ -93,3 +93,30 @@ test('counts the cache down from the configured TTL', { options: { cacheTtl: '1h
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(await ui.find({ text: '59:00' })).toBeDefined()
 })
+
+test('keeps the filled share of the context bar when the breakdown is missing', async ($, on) => {
+  const measured: SessionUsage = { ...usage([]), context: { tokens: 250_000, window: 1_000_000, percent: 25 } }
+  engine(on, measured)
+  await $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const filled = String.fromCharCode(0x2588).repeat(5) + String.fromCharCode(0x2591).repeat(15)
+  expect(await ui.find({ text: filled })).toBeDefined()
+})
+
+test('fills the session rows on resume before any new response', async ($, on) => {
+  engine(on, usage([]))
+  await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 60 })
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ text: /25%/ })).toBeDefined()
+})
+
+test('drops the cache row after compaction', async ($, on) => {
+  engine(on, usage([]))
+  await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 60 })
+  await $.classic.SessionStart({ source: 'compact' })
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ text: 'Cache' })).toBeUndefined()
+})

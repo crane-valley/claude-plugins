@@ -27,7 +27,7 @@ claude plugin install session-band@crane-valley
 
 ## Options
 
-Set them in `/config` or under `pluginConfigs` in `settings.json`.
+Set them with `/plugin configure session-band@crane-valley`, in `/config`, or with `--config KEY=VALUE` on `claude plugin install`. Unset options take the defaults below.
 
 | Option | Default | Meaning |
 | --- | --- | --- |

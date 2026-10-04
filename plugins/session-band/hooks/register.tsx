@@ -104,11 +104,17 @@ export const register: Register = (on, options) => {
   })
 
   on('classic.SessionStart', async ($, e, next) => {
-    if (e.seconds_since_last_response !== undefined) {
+    if (e.source === 'compact') {
+      // Compaction replaces the cached prefix; the next request writes a new one.
+      await update($, lastResponseAt, () => null)
+    } else if (e.seconds_since_last_response !== undefined) {
       const at = (await $.clock.now()) - e.seconds_since_last_response * SECOND_MS
       await update($, lastResponseAt, () => at)
     }
-    return next(e)
+    const result = await next(e)
+    // A resumed or forked conversation starts with empty session state and no session.start.
+    await refresh($)
+    return result
   })
 
   on('turn.step', async function* ($, e, next) {
@@ -189,12 +195,13 @@ export const register: Register = (on, options) => {
 
       const filled = s.percent === null ? 0 : Math.min(CONTEXT_BAR_CELLS, Math.round((s.percent / 100) * CONTEXT_BAR_CELLS))
       const cells = segments(filled, [...s.top.map(c => c.tokens), s.otherTokens])
+      const unattributed = filled - cells.slice(0, s.top.length).reduce((a, b) => a + b, 0)
       rows.push(
         <Box flexDirection="row" key="context">
           {label('Context')}
           <Text wrap="truncate-end">
             {s.top.map((c, i) => <Text color={c.color}>{FULL.repeat(cells[i] ?? 0)}</Text>)}
-            <Text dimColor>{FULL.repeat(cells[s.top.length] ?? 0) + EMPTY.repeat(CONTEXT_BAR_CELLS - filled)}</Text>
+            <Text dimColor>{FULL.repeat(unattributed) + EMPTY.repeat(CONTEXT_BAR_CELLS - filled)}</Text>
             {s.percent === null || s.tokens === null ? ' --' : ` ${s.percent}%  ${tokens(s.tokens)} / ${tokens(s.window)}`}
             {s.top.map(c => (
               <Text>
