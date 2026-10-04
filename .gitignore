@@ -1,0 +1,3 @@
+# Engine type declarations, written by /plugin-types and `claude plugin validate`
+.claude/
+**/.claude-plugin/types/

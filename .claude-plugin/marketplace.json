@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "crane-valley",
+  "owner": {
+    "name": "Crane Valley LLC",
+    "email": "oss@crane-valley.co.jp"
+  },
+  "description": "Claude Code plugins from Crane Valley.",
+  "plugins": [
+    {
+      "name": "session-band",
+      "source": "./plugins/session-band",
+      "description": "Prompt cache countdown, session cost, rate limits and context window usage in the band above the prompt.",
+      "license": "MIT"
+    }
+  ]
+}

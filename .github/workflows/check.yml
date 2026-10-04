@@ -1,0 +1,45 @@
+name: check
+
+on:
+  pull_request:
+    paths:
+      - ".claude-plugin/**"
+      - "plugins/**"
+      - ".github/workflows/check.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".claude-plugin/**"
+      - "plugins/**"
+      - ".github/workflows/check.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plugins:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DISABLE_AUTOUPDATER: "1"
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Function hooks are early access, so CI pins the CLI the plugins were last verified with.
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code@2.1.288
+
+      - name: Validate marketplace
+        run: claude plugin validate .
+
+      - name: Validate and test plugins
+        run: |
+          for dir in plugins/*/; do
+            claude plugin validate "$dir"
+            claude plugin test "$dir"
+          done
