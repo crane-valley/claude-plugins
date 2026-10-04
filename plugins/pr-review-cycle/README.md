@@ -10,7 +10,7 @@ Findings outside the scope of the PR are filed as issues (or recorded where proj
 ## Requirements
 
 - GitHub CLI `gh`, authenticated with access to the repository.
-- Works from the Bash tool; PowerShell notes included for Windows.
+- Bash. The commands are written for Bash; on Windows they run through Git Bash.
 - Claude Code background commands are used for waiting.
 
 ## Install

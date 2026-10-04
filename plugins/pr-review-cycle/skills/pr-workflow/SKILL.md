@@ -9,7 +9,7 @@ description: |
   "check PR status", "merge PR", "review cycle", "wait for reviews",
   "fix PR comments", "CI failed", "fix checks".
 compatibility: Requires GitHub CLI (gh), authenticated for the repository
-allowed-tools: Bash(gh *), Bash(git *), Bash(sleep *), PowerShell(gh *), PowerShell(git *)
+allowed-tools: Bash(gh *), Bash(git *), Bash(sleep *)
 ---
 
 # PR Workflow
@@ -56,8 +56,11 @@ done | sort | uniq -c
 
 Ignore bots that only post CI, coverage, or deployment notices; count the
 ones that review code. Logins carry a `[bot]` suffix in the REST API. Only
-a bot in the active set is waited for or re-requested. If the set is empty, the project has no AI review: after the
-first wait, judge the PR on checks and human review state alone.
+a bot in the active set is waited for or re-requested. An empty result from
+the history check means unknown, not none: a bot enabled recently has no
+history yet. Take the first wait anyway, then settle the set from the
+current PR. If it is still empty after that wait, the project has no AI
+review: judge the PR on checks and human review state alone.
 
 Known behaviour, applied only to bots in the active set (verify against what
 the bot actually does here):
@@ -113,17 +116,19 @@ human gate exists:
    review before pushing, run it. Update any plan or changelog file the
    project's instructions require, on this branch, so it lands with the PR.
 4. Push: `git push -u origin <branch>`.
-5. Create: `gh pr create --head <branch>` (follow the repository's PR
+5. Create: `gh pr create --head <branch>`, or `--head <owner>:<branch>`
+   when the branch was pushed to a fork (follow the repository's PR
    template if it has one).
 6. Do not request reviews from bots; those configured for the repository
    start on PR creation.
-7. Run the bot discovery above. If the repository has AI review bots (or
-   you cannot tell yet), start the wake-up timer: run `sleep 600` in the
+7. Start the wake-up timer even when the bot discovery found nothing (see
+   above): run `sleep 600` in the
    background (in Claude Code, the Bash tool with run_in_background), then
    end the turn with a one-line status. Bots take 5-10 minutes; the finished
-   background command wakes you. Never run a long foreground sleep. With no
-   AI review, wait for the checks instead (`gh pr checks N --watch` in the
-   background), then apply the human gate. Right after creation the checks
+   background command wakes you. Never run a long foreground sleep. When the
+   PR turns out to have no AI review, also wait for the checks
+   (`gh pr checks N --watch` in the background), then apply the human gate.
+   Right after creation the checks
    may not be registered yet and `--watch` exits at once; re-run it until
    the expected checks appear, and treat "no checks" as clean only once you
    have established that the repository runs none on pull requests.
@@ -289,6 +294,10 @@ unless the repository deletes merged branches automatically.
 - The subagent uses `check-pr-comments` for replies and resolves.
 
 ## GitHub API Notes
+
+The commands in both skills are written for Bash; on Windows run them
+through Git Bash. The PowerShell notes below are for reading JSON in
+PowerShell when you must.
 
 - Use `--paginate` (or `per_page=100`); the default page of 30 misses
   comments on busy PRs.

@@ -7,7 +7,7 @@ description: |
   Triggers: "PR comments", "review comments", "resolve comments",
   "address review".
 compatibility: Requires GitHub CLI (gh), authenticated for the repository
-allowed-tools: Bash(gh *), Bash(git *), PowerShell(gh *), PowerShell(git *), Read
+allowed-tools: Bash(gh *), Bash(git *), Read
 ---
 
 Handle review comments on PR #$ARGUMENTS.
@@ -35,17 +35,16 @@ Pass them with `-F query=@<path>`. Do not inline a document as
 `-f query='...$var...'`: shells can expand the GraphQL variables (`$owner`,
 `$threadId`) before gh sees them.
 
-`SKILL` below is this skill's base directory, the folder this SKILL.md was
-loaded from (Claude Code states it when the skill loads). Shell state may
-not persist between tool calls, so set it in the same command as each gh call:
-
-```bash
-SKILL="<this skill's base directory>"
-```
+`SKILL` in the commands below is this skill's base directory, the folder
+this SKILL.md was loaded from (Claude Code states it when the skill loads).
+Shell state may not persist between tool calls, so every block sets it
+first; replace the placeholder with the real path each time. The commands
+are written for Bash; on Windows run them through Git Bash.
 
 ## Step 1: Fetch All Threads
 
 ```bash
+SKILL="<this skill's base directory>"
 # gh does not expand {owner}/{repo} inside GraphQL -F values
 read OWNER REPO < <(gh repo view --json owner,name --jq '.owner.login + " " + .name')
 
@@ -58,7 +57,8 @@ gh api graphql --paginate \
               resolvedBy: .resolvedBy.login,
               path, line, startLine, originalLine, diffSide,
               comments: [.comments.nodes[]
-                | {id, author: .author.login, path, line, body, updatedAt, lastEditedAt}]}
+                | {id, author: .author.login, authorType: .author.__typename,
+                   path, line, body, updatedAt, lastEditedAt}]}
              + (if .comments.commentsPageInfo.hasNextPage
                 then {truncated: true, commentsCursor: .comments.commentsPageInfo.endCursor}
                 else {} end)]}'
@@ -88,12 +88,14 @@ A thread with more than 100 comments comes back with `truncated: true` and a
 are at the end. Fetch the rest and merge it into that thread first:
 
 ```bash
+SKILL="<this skill's base directory>"
 gh api graphql --paginate \
   -F threadId='THREAD_NODE_ID' \
   -F endCursor='COMMENTS_CURSOR_FROM_STEP_1' \
   -F query=@"$SKILL/queries/fetch-thread-comments.graphql" \
   --jq '.data.node.comments.nodes[]
-        | {id, author: .author.login, path, line, body, updatedAt, lastEditedAt}'
+        | {id, author: .author.login, authorType: .author.__typename,
+           path, line, body, updatedAt, lastEditedAt}'
 ```
 
 This is a separate document because `gh api graphql --paginate` drives one
@@ -120,7 +122,8 @@ Check each claim against the code before acting on it; reviewers, bots
 especially, are sometimes wrong. Low-severity comments still deserve an
 honest answer, and a small fix beats a dismissal.
 
-Note who opened each thread: a bot or a person. Both get the same triage and
+Note who opened each thread: a bot or a person, from the first comment's
+`authorType` (`Bot` or `User`). Both get the same triage and
 reply; they differ only at resolve time (Step 6).
 
 ## Step 3: Fix
@@ -131,6 +134,7 @@ only when they pass.
 ## Step 4: Reply to Every Thread
 
 ```bash
+SKILL="<this skill's base directory>"
 gh api graphql \
   -F threadId='THREAD_NODE_ID' \
   -f body='Fixed in abc1234 -- the cache is now keyed by tenant.' \
@@ -171,6 +175,7 @@ may not exist.
 Check each reply ID exists on the server:
 
 ```bash
+SKILL="<this skill's base directory>"
 gh api graphql \
   -F id='PRRC_xxx' \
   -F query=@"$SKILL/queries/verify-reply.graphql" \
@@ -184,6 +189,7 @@ you resolve it. After pushing, `git rev-parse HEAD` must equal
 Then resolve:
 
 ```bash
+SKILL="<this skill's base directory>"
 for tid in THREAD_ID_1 THREAD_ID_2; do
   gh api graphql \
     -F threadId="$tid" \

@@ -7,7 +7,7 @@ query($threadId: ID!, $endCursor: String) {
     ... on PullRequestReviewThread {
       comments(first: 100, after: $endCursor) {
         nodes {
-          id databaseId author { login } body path line
+          id databaseId author { login __typename } body path line
           updatedAt lastEditedAt
         }
         pageInfo { hasNextPage endCursor }

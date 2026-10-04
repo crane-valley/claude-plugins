@@ -17,7 +17,7 @@ query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
             # only `pageInfo` key in this document.
             commentsPageInfo: pageInfo { hasNextPage endCursor }
             nodes {
-              id databaseId author { login } body path line
+              id databaseId author { login __typename } body path line
               updatedAt lastEditedAt
             }
           }

@@ -26,6 +26,8 @@ claude plugin validate plugins/<name>
 claude plugin test plugins/<name>
 ```
 
+`claude plugin test` applies only to plugins with a hooks module (`hooks/hooks.json`); a skills-only plugin such as pr-review-cycle is checked with `claude plugin validate` alone.
+
 For editor types, run `/plugin-types plugins/<name>/.claude/types` in a Claude Code session; the folder is git-ignored.
 
 ## Contact
