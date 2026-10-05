@@ -90,11 +90,21 @@ const fetchCredits = async ($: EngineInterface): Promise<number | null> => {
     if (typeof extra !== 'object' || extra === null) {
       return null
     }
-    const { is_enabled, utilization } = extra as { is_enabled?: unknown; utilization?: unknown }
-    if (is_enabled !== true || typeof utilization !== 'number' || !(utilization >= 0 && utilization <= CREDITS_MAX_PERCENT)) {
+    const { is_enabled, utilization, used_credits, monthly_limit } = extra as Record<string, unknown>
+    if (is_enabled !== true) {
       return null
     }
-    return Math.round(utilization * 10) / 10
+    // An allowance with nothing spent yet answers utilization null; the two amounts share a unit.
+    const percent =
+      typeof utilization === 'number'
+        ? utilization
+        : typeof used_credits === 'number' && typeof monthly_limit === 'number' && monthly_limit > 0
+          ? (used_credits / monthly_limit) * 100
+          : NaN
+    if (!(percent >= 0 && percent <= CREDITS_MAX_PERCENT)) {
+      return null
+    }
+    return Math.round(percent * 10) / 10
   } catch {
     return null
   }

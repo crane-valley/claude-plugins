@@ -433,3 +433,15 @@ test('keeps the credits figure while the first request after an idle hour is out
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(await ui.find({ text: /42\.3%/ })).toBeDefined()
 })
+
+test('shows 0% for an allowance with nothing spent, which reports no utilization', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  const body = { extra_usage: { is_enabled: true, monthly_limit: 50000, used_credits: 0, utilization: null, currency: 'USD' } }
+  creditsEndpoint(on, { status: 200, text: JSON.stringify(body) })
+  await $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+  await clock.advance(0)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ text: /^Credits .* 0%$/ })).toBeDefined()
+})
