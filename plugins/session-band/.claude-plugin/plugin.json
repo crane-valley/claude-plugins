@@ -22,7 +22,7 @@
     "showCredits": {
       "type": "boolean",
       "title": "Show usage credits",
-      "description": "On credit-billed plans such as Enterprise, ask Claude's usage endpoint every 5 minutes for the monthly credit spend and show it under Limits; uses your own login, and the endpoint is undocumented",
+      "description": "On credit-billed plans such as Enterprise, ask Claude's usage endpoint at most every 5 minutes for the monthly credit spend and show it under Limits; uses your own login, and the endpoint is undocumented",
       "default": false
     }
   }
