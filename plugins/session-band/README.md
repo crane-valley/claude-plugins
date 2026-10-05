@@ -6,7 +6,7 @@ Session figures in the band directly above the Claude Code prompt, on the termin
 
 - Cache: time left before the main thread's prompt cache expires, counted from the start of the last main-thread request that read or wrote the cache, since generation time counts against the cache lifetime. After a session is resumed or forked, the plugin has no request start time, only the time the last response finished (Claude Code's SessionStart field `seconds_since_last_response`), so the restored countdown is an estimate that can run long by up to that response's generation time and is shown followed by the word `estimated` in dim text, for example `4:00  estimated`, until the next main-thread response that reads or writes the cache replaces it with the exact countdown. When Claude Code reports on resume that the prompt cache has likely expired, the row shows `expired` instead.
 - Session: the session's API-priced cost and how long it has run.
-- Limits: each rate-limit window the API reports, with a usage bar and the time to its reset. Windows the plugin does not name (an organization spend limit, for example) show under their raw kind. The row is hidden until the first response of the session reports a reading.
+- Limits: each rate-limit window the API reports, with a usage bar and the time to its reset. Windows the plugin does not name (an organization spend limit, for example) show under their raw kind. The row is hidden until the first response of the session reports a reading. Plans billed in usage credits, such as Enterprise seats, report no window on responses; turn on `showCredits` to add their monthly credit spend as `Credits`.
 - Context: the context window fill, split by the largest categories in `/context`'s colors.
 
 ## Requirements
@@ -28,6 +28,7 @@ Set them with `/plugin configure session-band@crane-valley`, in `/config`, or wi
 | --- | --- | --- |
 | `cacheTtl` | `5m` | The prompt cache TTL your main thread uses (`5m` or `1h`). The plugin cannot read it from Claude Code, so a wrong value shows a wrong countdown. |
 | `showCost` | `true` | Show the session's cost. On a subscription this is the API price of the usage, not what you are billed. |
+| `showCredits` | `false` | Add the account's monthly usage-credit spend to the Limits row, as Claude Code's `/usage` shows it under Usage credits. The plugin asks the same endpoint with your own login at most every 5 minutes. The endpoint is undocumented, so when it changes or answers with an error the row is left out. It carries no reset time, so none is shown. It needs a claude.ai login: on Bedrock, Vertex, a gateway or an API key the plugin sends no request and shows no `Credits`. |
 
 ## Sharing the band
 

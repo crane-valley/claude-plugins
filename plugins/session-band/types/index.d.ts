@@ -11,6 +11,12 @@ export type CacheCountdown = {
   estimated: boolean
 }
 
+export type CreditsReading = {
+  percentUsed: number | null
+  fetchedAt: EpochMs
+  requestId: string | null
+}
+
 export type SessionSnapshot = {
   startedAt: EpochMs
   percent: number | null
@@ -27,6 +33,7 @@ declare module 'claude-code' {
     'session-band': {
       cache: CacheCountdown | null
       snapshot: SessionSnapshot | null
+      credits: CreditsReading | null
     }
   }
 }

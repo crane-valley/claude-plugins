@@ -1,6 +1,6 @@
 {
   "name": "session-band",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Prompt cache countdown, session cost, rate limits and context window usage in the band above the prompt",
   "author": { "name": "Crane Valley LLC", "email": "oss@crane-valley.co.jp" },
   "license": "MIT",
@@ -18,6 +18,12 @@
       "title": "Show session cost",
       "description": "Show the session's API-priced cost; on a subscription it is not what you are billed",
       "default": true
+    },
+    "showCredits": {
+      "type": "boolean",
+      "title": "Show usage credits",
+      "description": "On credit-billed plans such as Enterprise, ask Claude's usage endpoint every 5 minutes for the monthly credit spend and show it under Limits; uses your own login, and the endpoint is undocumented",
+      "default": false
     }
   }
 }
