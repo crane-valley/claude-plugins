@@ -351,3 +351,70 @@ for (const [name, authorization] of [
     expect(calls.count).toBe(0)
   })
 }
+
+const withUtilization = (utilization: number) => ({
+  status: 200,
+  ok: true,
+  headers: {},
+  text: JSON.stringify({ extra_usage: { is_enabled: true, utilization } }),
+})
+
+test('asks again once a request has hung for 30 minutes and drops its late answer', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  let answerHung = (_: number) => {}
+  const calls = { count: 0 }
+  on('session.authorize', () => ({ value: { handle: 'test-handle', kind: 'bearer' } }))
+  on('http.fetch', () => {
+    calls.count += 1
+    if (calls.count === 1) {
+      return new Promise(resolve => {
+        answerHung = utilization => resolve({ value: withUtilization(utilization) })
+      })
+    }
+    return { value: withUtilization(42.25) }
+  })
+  const measure = () => $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+
+  await measure()
+  await clock.advance(10 * 60_000)
+  await measure()
+  expect(calls.count).toBe(1)
+
+  await clock.advance(25 * 60_000)
+  await measure()
+  await clock.advance(0)
+  expect(calls.count).toBe(2)
+
+  answerHung(10)
+  await clock.advance(0)
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ text: /42\.3%/ })).toBeDefined()
+  expect(await ui.find({ text: /10%/ })).toBeUndefined()
+})
+
+test('hides the credits figure while a request hangs past 30 minutes', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  const calls = { count: 0 }
+  on('session.authorize', () => ({ value: { handle: 'test-handle', kind: 'bearer' } }))
+  on('http.fetch', () => {
+    calls.count += 1
+    return calls.count === 1 ? { value: withUtilization(42.25) } : new Promise(() => {})
+  })
+  const measure = () => $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+
+  await measure()
+  await clock.advance(0)
+  await clock.advance(5 * 60_000)
+  await measure()
+  await clock.advance(0)
+  expect(calls.count).toBe(2)
+
+  const before = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await before.find({ text: /42\.3%/ })).toBeDefined()
+  await before.unmount()
+  await clock.advance(30 * 60_000)
+  const after = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await after.find({ text: /42\.3%/ })).toBeUndefined()
+})

@@ -13,7 +13,8 @@ export type CacheCountdown = {
 
 export type CreditsReading = {
   percentUsed: number | null
-  fetchedAt: EpochMs
+  answeredAt: EpochMs | null
+  requestedAt: EpochMs
   requestId: string | null
 }
 

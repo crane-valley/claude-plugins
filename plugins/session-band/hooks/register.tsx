@@ -12,8 +12,9 @@ const TTL_MS: Record<string, number> = { '5m': 5 * MINUTE_MS, '1h': 60 * MINUTE_
 // The endpoint behind Claude Code's /usage "Usage credits"; undocumented, so every field is checked.
 const CREDITS_URL = 'https://api.anthropic.com/api/oauth/usage'
 const CREDITS_REFRESH_MS = 5 * MINUTE_MS
-// A reading whose request has been open this long is hidden rather than shown stale.
-const CREDITS_HANG_MS = 30 * MINUTE_MS
+// $.http.fetch has no timeout and cannot be cancelled, so a request open this long is given up:
+// its late answer is dropped and the next refresh asks again.
+const CREDITS_ABANDON_MS = 30 * MINUTE_MS
 // Past this the figure is not a percentage the bar can draw.
 const CREDITS_MAX_PERCENT = 10_000
 
@@ -99,51 +100,30 @@ const fetchCredits = async ($: EngineInterface): Promise<number | null> => {
   }
 }
 
-// $.http.fetch has no timeout and cannot be cancelled, so the request runs on a timer of its own
-// and no second one starts while it is open: a hung endpoint costs one request per module load.
-let creditsInFlight = false
-
 const pollCredits = async ($: EngineInterface) => {
-  if (creditsInFlight) {
+  const now = await $.clock.now()
+  const requestId = Math.random().toString(36).slice(2)
+  let started = false
+  // update writes with ifVersion and retries, so of two refreshes racing here only one starts a request.
+  await update($, credits, prev => {
+    // refresh runs after every response; the endpoint is asked at most once per interval.
+    started = prev === null || now - prev.requestedAt >= (prev.requestId === null ? CREDITS_REFRESH_MS : CREDITS_ABANDON_MS)
+    return started
+      ? { percentUsed: prev?.percentUsed ?? null, answeredAt: prev?.answeredAt ?? null, requestedAt: now, requestId }
+      : prev
+  })
+  if (!started) {
     return
   }
-  // Claimed before the first await, so a second refresh cannot slip past the check.
-  creditsInFlight = true
-  const requestId = Math.random().toString(36).slice(2)
-  let scheduled = false
-  try {
-    const now = await $.clock.now()
-    let started = false
-    await update($, credits, prev => {
-      // refresh runs after every response; the endpoint is asked at most once per interval.
-      if (prev !== null && now - prev.fetchedAt < CREDITS_REFRESH_MS) {
-        return prev
-      }
-      started = true
-      return { percentUsed: prev?.percentUsed ?? null, fetchedAt: now, requestId }
-    })
-    if (!started) {
-      return
-    }
-    $.clock.after(0, async () => {
-      try {
-        const percentUsed = await fetchCredits($)
-        // A late answer to an older request, or one after /clear, no longer matches and is dropped.
-        await update($, credits, prev =>
-          prev !== null && prev.requestId === requestId ? { percentUsed, fetchedAt: prev.fetchedAt, requestId: null } : prev,
-        )
-      } finally {
-        creditsInFlight = false
-      }
-    })
-    scheduled = true
-  } finally {
-    // Once set, the timer releases the flag; a throw before that must release it here, or the
-    // reading would never refresh again.
-    if (!scheduled) {
-      creditsInFlight = false
-    }
-  }
+  // The request runs on a timer of its own so a slow endpoint never holds up the response's hooks.
+  $.clock.after(0, async () => {
+    const percentUsed = await fetchCredits($)
+    const answeredAt = await $.clock.now()
+    // A late answer to a request given up on, or one after /clear, no longer matches and is dropped.
+    await update($, credits, prev =>
+      prev !== null && prev.requestId === requestId ? { ...prev, percentUsed, answeredAt, requestId: null } : prev,
+    )
+  })
 }
 
 const refresh = async ($: EngineInterface, showCredits: boolean) => {
@@ -292,8 +272,9 @@ export const register: Register = (on, options) => {
       )
 
       const live = s.limits.filter(l => l.resetsAt === null || l.resetsAt > now)
-      const crHung = cr !== null && cr.requestId !== null && now - cr.fetchedAt >= CREDITS_HANG_MS
-      if (cr !== null && cr.percentUsed !== null && !crHung) {
+      // While a request hangs, a figure older than the give-up time is hidden rather than shown stale.
+      const crFresh = cr !== null && cr.answeredAt !== null && (cr.requestId === null || now - cr.answeredAt < CREDITS_ABANDON_MS)
+      if (crFresh && cr.percentUsed !== null) {
         // The endpoint carries no reset time, and billing cycles differ by organization.
         live.push({ kind: 'usage_credits', percentUsed: cr.percentUsed, resetsAt: null })
       }
