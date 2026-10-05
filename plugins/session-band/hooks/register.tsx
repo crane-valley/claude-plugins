@@ -9,15 +9,24 @@ const TOP_CATEGORIES = 3
 const SECOND_MS = 1000
 const MINUTE_MS = 60 * SECOND_MS
 const TTL_MS: Record<string, number> = { '5m': 5 * MINUTE_MS, '1h': 60 * MINUTE_MS }
+// The endpoint behind Claude Code's /usage "Usage credits"; undocumented, so every field is checked.
+const CREDITS_URL = 'https://api.anthropic.com/api/oauth/usage'
+const CREDITS_REFRESH_MS = 5 * MINUTE_MS
+// $.http.fetch has no timeout and cannot be cancelled, so a request open this long is given up:
+// its late answer is dropped and the next refresh asks again.
+const CREDITS_ABANDON_MS = 30 * MINUTE_MS
+// Past this the figure is not a percentage the bar can draw.
+const CREDITS_MAX_PERCENT = 10_000
 
 const FULL = String.fromCharCode(0x2588)
 const EMPTY = String.fromCharCode(0x2591)
 const SWATCH = String.fromCharCode(0x25a0)
 
-const LIMIT_NAMES: Record<string, string> = { five_hour: '5h', seven_day: '7d', spend_limit: 'Spend' }
+const LIMIT_NAMES: Record<string, string> = { five_hour: '5h', seven_day: '7d', spend_limit: 'Spend', usage_credits: 'Credits' }
 
 const cache = atom({ plugin: 'session-band', key: 'cache' } as const, null)
 const snapshot = atom({ plugin: 'session-band', key: 'snapshot' } as const, null)
+const credits = atom({ plugin: 'session-band', key: 'credits' } as const, null)
 
 const tokens = (n: number) => {
   if (n >= 1_000_000) {
@@ -63,7 +72,71 @@ const segments = (filled: number, weights: number[]) => {
 
 const severity = (percent: number) => (percent >= 90 ? 'error' : percent >= 75 ? 'warning' : undefined)
 
-const refresh = async ($: EngineInterface) => {
+// Credit-billed plans (Enterprise seats, for one) report no rate-limit window on responses;
+// their monthly credit spend is only on the usage endpoint. Any failure hides the row.
+const fetchCredits = async ($: EngineInterface): Promise<number | null> => {
+  try {
+    const auth = await $.session.authorize()
+    // Bedrock, Vertex and gateways hold no first-party credential, and the endpoint takes only a
+    // claude.ai login: an API key would be refused on every poll.
+    if (auth === null || auth.kind !== 'bearer') {
+      return null
+    }
+    const r = await $.http.fetch(CREDITS_URL, { auth: auth.handle, headers: { 'anthropic-beta': 'oauth-2025-04-20' } })
+    if (!r.ok) {
+      return null
+    }
+    const extra: unknown = (JSON.parse(r.text) as { extra_usage?: unknown }).extra_usage
+    if (typeof extra !== 'object' || extra === null) {
+      return null
+    }
+    const { is_enabled, utilization, used_credits, monthly_limit } = extra as Record<string, unknown>
+    if (is_enabled !== true) {
+      return null
+    }
+    // An allowance with nothing spent yet answers utilization null; the two amounts share a unit.
+    const percent =
+      typeof utilization === 'number'
+        ? utilization
+        : typeof used_credits === 'number' && typeof monthly_limit === 'number' && monthly_limit > 0
+          ? (used_credits / monthly_limit) * 100
+          : NaN
+    if (!(percent >= 0 && percent <= CREDITS_MAX_PERCENT)) {
+      return null
+    }
+    return Math.round(percent * 10) / 10
+  } catch {
+    return null
+  }
+}
+
+const pollCredits = async ($: EngineInterface) => {
+  const now = await $.clock.now()
+  const requestId = Math.random().toString(36).slice(2)
+  let started = false
+  // update writes with ifVersion and retries, so of two refreshes racing here only one starts a request.
+  await update($, credits, prev => {
+    // refresh runs after every response; the endpoint is asked at most once per interval.
+    started = prev === null || now - prev.requestedAt >= (prev.requestId === null ? CREDITS_REFRESH_MS : CREDITS_ABANDON_MS)
+    // pendingSince keeps the first unanswered request's time when a given-up one is asked again.
+    return started
+      ? { percentUsed: prev?.percentUsed ?? null, requestedAt: now, requestId, pendingSince: prev?.pendingSince ?? now }
+      : prev
+  })
+  if (!started) {
+    return
+  }
+  // The request runs on a timer of its own so a slow endpoint never holds up the response's hooks.
+  $.clock.after(0, async () => {
+    const percentUsed = await fetchCredits($)
+    // A late answer to a request given up on, or one after /clear, no longer matches and is dropped.
+    await update($, credits, prev =>
+      prev !== null && prev.requestId === requestId ? { ...prev, percentUsed, requestId: null, pendingSince: null } : prev,
+    )
+  })
+}
+
+const refresh = async ($: EngineInterface, showCredits: boolean) => {
   // 'full' sends a token-count request per MCP tool and memory file on every turn; 'summary' is local.
   const usage = await $.session.usage({ breakdown: 'summary' })
   const used = (usage.context.breakdown?.categories ?? [])
@@ -73,6 +146,9 @@ const refresh = async ($: EngineInterface) => {
     const resetsAt = l.resetsAt === undefined ? NaN : Date.parse(l.resetsAt)
     return { kind: l.kind, percentUsed: l.percentUsed, resetsAt: Number.isNaN(resetsAt) ? null : resetsAt }
   })
+  if (showCredits) {
+    await pollCredits($)
+  }
   await update($, snapshot, () => ({
     startedAt: usage.startedAt,
     percent: usage.context.percent ?? null,
@@ -89,17 +165,18 @@ export const register: Register = (on, options) => {
   // The plugin cannot observe the TTL the engine requested, so the person states it.
   const ttlMs = TTL_MS[String(options.cacheTtl)] ?? TTL_MS['5m']!
   const showCost = options.showCost !== false
+  const showCredits = options.showCredits === true
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    await refresh($)
+    await refresh($, showCredits)
     $.clock.every(SECOND_MS, () => $.ui.invalidate('ui.render'))
     return result
   })
 
   on('session.measure', async ($, e, next) => {
     const result = await next(e)
-    await refresh($)
+    await refresh($, showCredits)
     return result
   })
 
@@ -115,7 +192,7 @@ export const register: Register = (on, options) => {
     }
     const result = await next(e)
     // A resumed or forked conversation starts with empty session state and no session.start.
-    await refresh($)
+    await refresh($, showCredits)
     return result
   })
 
@@ -149,7 +226,7 @@ export const register: Register = (on, options) => {
     await update($, cache, () => null)
     const result = await next(e)
     // The new model may have another context window; session.measure waits for its first response.
-    await refresh($)
+    await refresh($, showCredits)
     return result
   })
 
@@ -157,6 +234,7 @@ export const register: Register = (on, options) => {
     if (e.reason === 'clear') {
       await update($, cache, () => null)
       await update($, snapshot, () => null)
+      await update($, credits, () => null)
     }
     return next(e)
   })
@@ -168,6 +246,7 @@ export const register: Register = (on, options) => {
     }
     const c = await read($, cache)
     const s = await read($, snapshot)
+    const cr = showCredits ? await read($, credits) : null
     if (c === null && s === null) {
       return below
     }
@@ -203,6 +282,12 @@ export const register: Register = (on, options) => {
       )
 
       const live = s.limits.filter(l => l.resetsAt === null || l.resetsAt > now)
+      // Once requests have gone unanswered past the give-up time, the figure is hidden rather than shown stale.
+      const crHung = cr !== null && cr.pendingSince !== null && now - cr.pendingSince >= CREDITS_ABANDON_MS
+      if (cr !== null && cr.percentUsed !== null && !crHung) {
+        // The endpoint carries no reset time, and billing cycles differ by organization.
+        live.push({ kind: 'usage_credits', percentUsed: cr.percentUsed, resetsAt: null })
+      }
       if (live.length > 0) {
         rows.push(
           <Box flexDirection="row" key="limits">

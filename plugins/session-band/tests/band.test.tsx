@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { On, SessionMessage, SessionRateLimit, SessionUsage } from 'claude-code'
+import type { On, SessionAuthorization, SessionMessage, SessionRateLimit, SessionUsage } from 'claude-code'
 
 const SURFACES = ['terminal', 'desktop'] as const
 
@@ -250,4 +250,198 @@ test('shows the cache as expired on resume when the engine says it likely expire
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(await ui.find({ text: 'expired' })).toBeDefined()
+})
+
+const creditsEndpoint = (
+  on: On,
+  reply: { status: number; text: string },
+  authorization: SessionAuthorization = { handle: 'test-handle', kind: 'bearer' },
+) => {
+  const calls = { count: 0 }
+  on('session.authorize', () => ({ value: authorization }))
+  on('http.fetch', () => {
+    calls.count += 1
+    return { value: { status: reply.status, ok: reply.status >= 200 && reply.status < 300, headers: {}, text: reply.text } }
+  })
+  return calls
+}
+
+const CREDITS_BODY = JSON.stringify({ five_hour: null, seven_day: null, extra_usage: { is_enabled: true, utilization: 42.25 } })
+
+test('leaves the usage endpoint alone unless showCredits is on', async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  const calls = creditsEndpoint(on, { status: 200, text: CREDITS_BODY })
+  await $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+  await clock.advance(0)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ text: 'Limits' })).toBeUndefined()
+  expect(calls.count).toBe(0)
+})
+
+test('shows usage credits under Limits when showCredits is on', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  creditsEndpoint(on, { status: 200, text: CREDITS_BODY })
+  await $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+  await clock.advance(0)
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...BAND, surface })
+    expect(await ui.find({ text: /^Credits / })).toBeDefined()
+    expect(await ui.find({ text: /42\.3%/ })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+test('asks the usage endpoint at most once per five minutes', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  const calls = creditsEndpoint(on, { status: 200, text: CREDITS_BODY })
+  const measure = () => $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+
+  await measure()
+  await clock.advance(60_000)
+  await measure()
+  expect(calls.count).toBe(1)
+
+  await clock.advance(5 * 60_000)
+  await measure()
+  await clock.advance(0)
+  expect(calls.count).toBe(2)
+})
+
+for (const [name, reply] of [
+  ['an error status', { status: 500, text: CREDITS_BODY }],
+  ['a body that is not JSON', { status: 200, text: '<html>' }],
+  ['credits turned off', { status: 200, text: JSON.stringify({ extra_usage: { is_enabled: false, utilization: 10 } }) }],
+  ['no extra_usage field', { status: 200, text: JSON.stringify({ five_hour: null }) }],
+  ['a negative utilization', { status: 200, text: JSON.stringify({ extra_usage: { is_enabled: true, utilization: -10 } }) }],
+  ['an unbounded utilization', { status: 200, text: JSON.stringify({ extra_usage: { is_enabled: true, utilization: 1e308 } }) }],
+] as const) {
+  test(`hides usage credits on ${name}`, { options: { showCredits: true } }, async ($, on) => {
+    const measured = usage([])
+    const clock = engine(on, measured)
+    const calls = creditsEndpoint(on, reply)
+    await $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+    await clock.advance(0)
+    expect(calls.count).toBe(1)
+
+    const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+    expect(await ui.find({ text: 'Limits' })).toBeUndefined()
+    expect(await ui.find({ text: /25%/ })).toBeDefined()
+  })
+}
+
+for (const [name, authorization] of [
+  ['without a first-party credential, as on Bedrock or Vertex', null],
+  ['with an API key, which the endpoint does not take', { handle: 'test-handle', kind: 'api-key' }],
+] as const) {
+  test(`skips the usage endpoint ${name}`, { options: { showCredits: true } }, async ($, on) => {
+    const measured = usage([])
+    const clock = engine(on, measured)
+    const calls = creditsEndpoint(on, { status: 200, text: CREDITS_BODY }, authorization)
+    await $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+    await clock.advance(0)
+
+    const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+    expect(await ui.find({ text: 'Limits' })).toBeUndefined()
+    expect(await ui.find({ text: /25%/ })).toBeDefined()
+    expect(calls.count).toBe(0)
+  })
+}
+
+const withUtilization = (utilization: number) => ({
+  status: 200,
+  ok: true,
+  headers: {},
+  text: JSON.stringify({ extra_usage: { is_enabled: true, utilization } }),
+})
+
+test('asks again once a request has hung for 30 minutes and drops its late answer', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  let answerHung = (_: number) => {}
+  const calls = { count: 0 }
+  on('session.authorize', () => ({ value: { handle: 'test-handle', kind: 'bearer' } }))
+  on('http.fetch', () => {
+    calls.count += 1
+    if (calls.count === 1) {
+      return new Promise(resolve => {
+        answerHung = utilization => resolve({ value: withUtilization(utilization) })
+      })
+    }
+    return { value: withUtilization(42.25) }
+  })
+  const measure = () => $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+
+  await measure()
+  await clock.advance(10 * 60_000)
+  await measure()
+  expect(calls.count).toBe(1)
+
+  await clock.advance(25 * 60_000)
+  await measure()
+  await clock.advance(0)
+  expect(calls.count).toBe(2)
+
+  answerHung(10)
+  await clock.advance(0)
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ text: /42\.3%/ })).toBeDefined()
+  expect(await ui.find({ text: /10%/ })).toBeUndefined()
+})
+
+test('hides the credits figure while a request hangs past 30 minutes', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  const calls = { count: 0 }
+  on('session.authorize', () => ({ value: { handle: 'test-handle', kind: 'bearer' } }))
+  on('http.fetch', () => {
+    calls.count += 1
+    return calls.count === 1 ? { value: withUtilization(42.25) } : new Promise(() => {})
+  })
+  const measure = () => $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+
+  await measure()
+  await clock.advance(0)
+  await clock.advance(5 * 60_000)
+  await measure()
+  await clock.advance(0)
+  expect(calls.count).toBe(2)
+
+  const before = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await before.find({ text: /42\.3%/ })).toBeDefined()
+  await before.unmount()
+  await clock.advance(30 * 60_000)
+  const after = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await after.find({ text: /42\.3%/ })).toBeUndefined()
+})
+
+test('keeps the credits figure while the first request after an idle hour is out', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  creditsEndpoint(on, { status: 200, text: CREDITS_BODY })
+  const measure = () => $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+
+  await measure()
+  await clock.advance(0)
+  await clock.advance(60 * 60_000)
+  await measure()
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ text: /42\.3%/ })).toBeDefined()
+})
+
+test('shows 0% for an allowance with nothing spent, which reports no utilization', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  const body = { extra_usage: { is_enabled: true, monthly_limit: 50000, used_credits: 0, utilization: null, currency: 'USD' } }
+  creditsEndpoint(on, { status: 200, text: JSON.stringify(body) })
+  await $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+  await clock.advance(0)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ text: /^Credits .* 0%$/ })).toBeDefined()
 })
