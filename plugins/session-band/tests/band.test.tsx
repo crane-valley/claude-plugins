@@ -418,3 +418,18 @@ test('hides the credits figure while a request hangs past 30 minutes', { options
   const after = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(await after.find({ text: /42\.3%/ })).toBeUndefined()
 })
+
+test('keeps the credits figure while the first request after an idle hour is out', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  creditsEndpoint(on, { status: 200, text: CREDITS_BODY })
+  const measure = () => $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+
+  await measure()
+  await clock.advance(0)
+  await clock.advance(60 * 60_000)
+  await measure()
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ text: /42\.3%/ })).toBeDefined()
+})

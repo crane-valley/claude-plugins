@@ -13,9 +13,9 @@ export type CacheCountdown = {
 
 export type CreditsReading = {
   percentUsed: number | null
-  answeredAt: EpochMs | null
   requestedAt: EpochMs
   requestId: string | null
+  pendingSince: EpochMs | null
 }
 
 export type SessionSnapshot = {

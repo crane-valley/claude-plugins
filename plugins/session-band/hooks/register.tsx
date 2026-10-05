@@ -108,8 +108,9 @@ const pollCredits = async ($: EngineInterface) => {
   await update($, credits, prev => {
     // refresh runs after every response; the endpoint is asked at most once per interval.
     started = prev === null || now - prev.requestedAt >= (prev.requestId === null ? CREDITS_REFRESH_MS : CREDITS_ABANDON_MS)
+    // pendingSince keeps the first unanswered request's time when a given-up one is asked again.
     return started
-      ? { percentUsed: prev?.percentUsed ?? null, answeredAt: prev?.answeredAt ?? null, requestedAt: now, requestId }
+      ? { percentUsed: prev?.percentUsed ?? null, requestedAt: now, requestId, pendingSince: prev?.pendingSince ?? now }
       : prev
   })
   if (!started) {
@@ -118,10 +119,9 @@ const pollCredits = async ($: EngineInterface) => {
   // The request runs on a timer of its own so a slow endpoint never holds up the response's hooks.
   $.clock.after(0, async () => {
     const percentUsed = await fetchCredits($)
-    const answeredAt = await $.clock.now()
     // A late answer to a request given up on, or one after /clear, no longer matches and is dropped.
     await update($, credits, prev =>
-      prev !== null && prev.requestId === requestId ? { ...prev, percentUsed, answeredAt, requestId: null } : prev,
+      prev !== null && prev.requestId === requestId ? { ...prev, percentUsed, requestId: null, pendingSince: null } : prev,
     )
   })
 }
@@ -272,9 +272,9 @@ export const register: Register = (on, options) => {
       )
 
       const live = s.limits.filter(l => l.resetsAt === null || l.resetsAt > now)
-      // While a request hangs, a figure older than the give-up time is hidden rather than shown stale.
-      const crFresh = cr !== null && cr.answeredAt !== null && (cr.requestId === null || now - cr.answeredAt < CREDITS_ABANDON_MS)
-      if (crFresh && cr.percentUsed !== null) {
+      // Once requests have gone unanswered past the give-up time, the figure is hidden rather than shown stale.
+      const crHung = cr !== null && cr.pendingSince !== null && now - cr.pendingSince >= CREDITS_ABANDON_MS
+      if (cr !== null && cr.percentUsed !== null && !crHung) {
         // The endpoint carries no reset time, and billing cycles differ by organization.
         live.push({ kind: 'usage_credits', percentUsed: cr.percentUsed, resetsAt: null })
       }
