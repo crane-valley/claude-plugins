@@ -312,6 +312,118 @@ test('asks the usage endpoint at most once per five minutes', { options: { showC
   expect(calls.count).toBe(2)
 })
 
+test('asks the usage endpoint again after 30 seconds when a request failed', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  const reply = { status: 401, text: '' }
+  const calls = creditsEndpoint(on, reply)
+  const measure = () => $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+
+  await measure()
+  await clock.advance(0)
+  await clock.advance(10_000)
+  await measure()
+  expect(calls.count).toBe(1)
+
+  reply.status = 200
+  reply.text = CREDITS_BODY
+  await clock.advance(30_000)
+  await measure()
+  await clock.advance(0)
+  expect(calls.count).toBe(2)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ text: /^Credits / })).toBeDefined()
+})
+
+test('doubles the wait after each failed request in a row', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  const calls = creditsEndpoint(on, { status: 429, text: '' })
+  const measure = async () => {
+    await $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+    await clock.advance(0)
+  }
+
+  await measure()
+  await clock.advance(30_000)
+  await measure()
+  expect(calls.count).toBe(2)
+
+  await clock.advance(30_000)
+  await measure()
+  expect(calls.count).toBe(2)
+  await clock.advance(30_000)
+  await measure()
+  expect(calls.count).toBe(3)
+})
+
+test('waits from the failure, not the request, before asking again', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  const calls = { count: 0 }
+  let fail = () => {}
+  on('session.authorize', () => ({ value: { handle: 'test-handle', kind: 'bearer' } }))
+  on('http.fetch', () => {
+    calls.count += 1
+    return new Promise(resolve => {
+      fail = () => resolve({ value: { status: 503, ok: false, headers: {}, text: '' } })
+    })
+  })
+  const measure = async () => {
+    await $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+    await clock.advance(0)
+  }
+
+  await measure()
+  await clock.advance(45_000)
+  fail()
+  await clock.advance(0)
+  await measure()
+  expect(calls.count).toBe(1)
+
+  await clock.advance(30_000)
+  await measure()
+  expect(calls.count).toBe(2)
+})
+
+test('keeps the credits figure through failed requests until they last 30 minutes', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  const reply = { status: 200, text: CREDITS_BODY }
+  creditsEndpoint(on, reply)
+  const measure = async () => {
+    await $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+    await clock.advance(0)
+  }
+
+  await measure()
+  reply.status = 500
+  await clock.advance(5 * 60_000)
+  await measure()
+  const before = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await before.find({ text: /42\.3%/ })).toBeDefined()
+  await before.unmount()
+
+  await clock.advance(30 * 60_000)
+  await measure()
+  const after = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await after.find({ text: /42\.3%/ })).toBeUndefined()
+})
+
+test('keeps the five-minute interval when credits are turned off', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  const calls = creditsEndpoint(on, { status: 200, text: JSON.stringify({ extra_usage: { is_enabled: false, utilization: 10 } }) })
+  const measure = () => $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+
+  await measure()
+  await clock.advance(0)
+  await clock.advance(60_000)
+  await measure()
+  expect(calls.count).toBe(1)
+})
+
 for (const [name, reply] of [
   ['an error status', { status: 500, text: CREDITS_BODY }],
   ['a body that is not JSON', { status: 200, text: '<html>' }],

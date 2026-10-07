@@ -28,7 +28,7 @@ Set them with `/plugin configure session-band@crane-valley`, in `/config`, or wi
 | --- | --- | --- |
 | `cacheTtl` | `5m` | The prompt cache TTL your main thread uses (`5m` or `1h`). The plugin cannot read it from Claude Code, so a wrong value shows a wrong countdown. |
 | `showCost` | `true` | Show the session's cost. On a subscription this is the API price of the usage, not what you are billed. |
-| `showCredits` | `false` | Add the account's monthly usage-credit spend to the Limits row, as Claude Code's `/usage` shows it under Usage credits. The plugin asks the same endpoint with your own login at most every 5 minutes. The endpoint is undocumented, so when it changes or answers with an error the row is left out. It carries no reset time, so none is shown. It needs a claude.ai login: on Bedrock, Vertex, a gateway or an API key the plugin sends no request and shows no `Credits`. |
+| `showCredits` | `false` | Add the account's monthly usage-credit spend to the Limits row, as Claude Code's `/usage` shows it under Usage credits. The plugin asks the same endpoint with your own login at most every 5 minutes, or sooner after a failed request (30 seconds, doubling back up to 5 minutes). The endpoint is undocumented, so when it changes the row is left out; failed requests keep the last figure for up to 30 minutes. It carries no reset time, so none is shown. It needs a claude.ai login: on Bedrock, Vertex, a gateway or an API key the plugin sends no request and shows no `Credits`. |
 
 ## Sharing the band
 
