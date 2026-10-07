@@ -358,6 +358,35 @@ test('doubles the wait after each failed request in a row', { options: { showCre
   expect(calls.count).toBe(3)
 })
 
+test('waits from the failure, not the request, before asking again', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  const calls = { count: 0 }
+  let fail = () => {}
+  on('session.authorize', () => ({ value: { handle: 'test-handle', kind: 'bearer' } }))
+  on('http.fetch', () => {
+    calls.count += 1
+    return new Promise(resolve => {
+      fail = () => resolve({ value: { status: 503, ok: false, headers: {}, text: '' } })
+    })
+  })
+  const measure = async () => {
+    await $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+    await clock.advance(0)
+  }
+
+  await measure()
+  await clock.advance(45_000)
+  fail()
+  await clock.advance(0)
+  await measure()
+  expect(calls.count).toBe(1)
+
+  await clock.advance(30_000)
+  await measure()
+  expect(calls.count).toBe(2)
+})
+
 test('keeps the credits figure through failed requests until they last 30 minutes', { options: { showCredits: true } }, async ($, on) => {
   const measured = usage([])
   const clock = engine(on, measured)

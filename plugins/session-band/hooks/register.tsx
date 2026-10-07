@@ -153,6 +153,7 @@ const pollCredits = async ($: EngineInterface) => {
   // The request runs on a timer of its own so a slow endpoint never holds up the response's hooks.
   $.clock.after(0, async () => {
     const { percentUsed, failed } = await fetchCredits($)
+    const answeredAt = await $.clock.now()
     // A late answer to a request given up on, or one after /clear, no longer matches and is dropped.
     // A failure keeps the last figure, so a passing error does not blink the row; the 30-minute
     // pendingSince rule hides it once failures last.
@@ -160,7 +161,8 @@ const pollCredits = async ($: EngineInterface) => {
       prev === null || prev.requestId !== requestId
         ? prev
         : failed
-          ? { ...prev, requestId: null, failures: prev.failures + 1 }
+          ? // The wait runs from the failure, so a request that is slow to fail is not asked again at once.
+            { ...prev, requestedAt: answeredAt, requestId: null, failures: prev.failures + 1 }
           : { ...prev, percentUsed, requestId: null, pendingSince: null, failures: 0 },
     )
   })
