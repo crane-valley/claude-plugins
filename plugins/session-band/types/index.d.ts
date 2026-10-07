@@ -16,7 +16,7 @@ export type CreditsReading = {
   requestedAt: EpochMs
   requestId: string | null
   pendingSince: EpochMs | null
-  failed: boolean
+  failures: number
 }
 
 export type SessionSnapshot = {

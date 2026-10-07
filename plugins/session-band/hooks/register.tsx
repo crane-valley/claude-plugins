@@ -1,6 +1,6 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement } from 'claude-code'
-import type { RateLimit } from '../types'
+import type { CreditsReading, RateLimit } from '../types'
 
 const LABEL_WIDTH = 9
 const LIMIT_BAR_CELLS = 10
@@ -14,6 +14,13 @@ const CREDITS_URL = 'https://api.anthropic.com/api/oauth/usage'
 const CREDITS_REFRESH_MS = 5 * MINUTE_MS
 // A session that starts with an expired login fails its first ask; /login would otherwise wait out the full interval.
 const CREDITS_RETRY_MS = 30 * SECOND_MS
+// The wait doubles with each failure in a row, so a lasting 429 or outage is not asked every 30 seconds.
+const creditsWait = (prev: CreditsReading) =>
+  prev.requestId !== null
+    ? CREDITS_ABANDON_MS
+    : prev.failures === 0
+      ? CREDITS_REFRESH_MS
+      : Math.min(CREDITS_RETRY_MS * 2 ** (prev.failures - 1), CREDITS_REFRESH_MS)
 // $.http.fetch has no timeout and cannot be cancelled, so a request open this long is given up:
 // its late answer is dropped and the next refresh asks again.
 const CREDITS_ABANDON_MS = 30 * MINUTE_MS
@@ -101,7 +108,7 @@ const parseCredits = (text: string): number | null => {
 }
 
 // Credit-billed plans (Enterprise seats, for one) report no rate-limit window on responses;
-// their monthly credit spend is only on the usage endpoint. Any failure hides the row.
+// their monthly credit spend is only on the usage endpoint.
 // failed marks a missing login or a refused request, which is asked again sooner than an answer.
 const fetchCredits = async ($: EngineInterface): Promise<{ percentUsed: number | null; failed: boolean }> => {
   let text: string
@@ -134,12 +141,10 @@ const pollCredits = async ($: EngineInterface) => {
   // update writes with ifVersion and retries, so of two refreshes racing here only one starts a request.
   await update($, credits, prev => {
     // refresh runs after every response; the endpoint is asked at most once per interval.
-    started =
-      prev === null ||
-      now - prev.requestedAt >= (prev.requestId !== null ? CREDITS_ABANDON_MS : prev.failed ? CREDITS_RETRY_MS : CREDITS_REFRESH_MS)
-    // pendingSince keeps the first unanswered request's time when a given-up one is asked again.
+    started = prev === null || now - prev.requestedAt >= creditsWait(prev)
+    // pendingSince keeps the first unanswered request's time when a given-up or failed one is asked again.
     return started
-      ? { percentUsed: prev?.percentUsed ?? null, requestedAt: now, requestId, pendingSince: prev?.pendingSince ?? now, failed: prev?.failed ?? false }
+      ? { percentUsed: prev?.percentUsed ?? null, requestedAt: now, requestId, pendingSince: prev?.pendingSince ?? now, failures: prev?.failures ?? 0 }
       : prev
   })
   if (!started) {
@@ -149,8 +154,14 @@ const pollCredits = async ($: EngineInterface) => {
   $.clock.after(0, async () => {
     const { percentUsed, failed } = await fetchCredits($)
     // A late answer to a request given up on, or one after /clear, no longer matches and is dropped.
+    // A failure keeps the last figure, so a passing error does not blink the row; the 30-minute
+    // pendingSince rule hides it once failures last.
     await update($, credits, prev =>
-      prev !== null && prev.requestId === requestId ? { ...prev, percentUsed, requestId: null, pendingSince: null, failed } : prev,
+      prev === null || prev.requestId !== requestId
+        ? prev
+        : failed
+          ? { ...prev, requestId: null, failures: prev.failures + 1 }
+          : { ...prev, percentUsed, requestId: null, pendingSince: null, failures: 0 },
     )
   })
 }
@@ -301,7 +312,7 @@ export const register: Register = (on, options) => {
       )
 
       const live = s.limits.filter(l => l.resetsAt === null || l.resetsAt > now)
-      // Once requests have gone unanswered past the give-up time, the figure is hidden rather than shown stale.
+      // Once requests have gone unanswered or failed past the give-up time, the figure is hidden rather than shown stale.
       const crHung = cr !== null && cr.pendingSince !== null && now - cr.pendingSince >= CREDITS_ABANDON_MS
       if (cr !== null && cr.percentUsed !== null && !crHung) {
         // The endpoint carries no reset time, and billing cycles differ by organization.

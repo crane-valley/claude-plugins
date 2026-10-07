@@ -336,6 +336,52 @@ test('asks the usage endpoint again after 30 seconds when a request failed', { o
   expect(await ui.find({ text: /^Credits / })).toBeDefined()
 })
 
+test('doubles the wait after each failed request in a row', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  const calls = creditsEndpoint(on, { status: 429, text: '' })
+  const measure = async () => {
+    await $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+    await clock.advance(0)
+  }
+
+  await measure()
+  await clock.advance(30_000)
+  await measure()
+  expect(calls.count).toBe(2)
+
+  await clock.advance(30_000)
+  await measure()
+  expect(calls.count).toBe(2)
+  await clock.advance(30_000)
+  await measure()
+  expect(calls.count).toBe(3)
+})
+
+test('keeps the credits figure through failed requests until they last 30 minutes', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  const reply = { status: 200, text: CREDITS_BODY }
+  creditsEndpoint(on, reply)
+  const measure = async () => {
+    await $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+    await clock.advance(0)
+  }
+
+  await measure()
+  reply.status = 500
+  await clock.advance(5 * 60_000)
+  await measure()
+  const before = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await before.find({ text: /42\.3%/ })).toBeDefined()
+  await before.unmount()
+
+  await clock.advance(30 * 60_000)
+  await measure()
+  const after = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await after.find({ text: /42\.3%/ })).toBeUndefined()
+})
+
 test('keeps the five-minute interval when credits are turned off', { options: { showCredits: true } }, async ($, on) => {
   const measured = usage([])
   const clock = engine(on, measured)
