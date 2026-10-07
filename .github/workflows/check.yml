@@ -46,3 +46,18 @@ jobs:
               claude plugin test "$dir"
             fi
           done
+
+      # The engine writes a plugin's API types beside it when it loads the plugin, before the login
+      # check, so this run fails with "Not logged in" yet leaves the types; the test catches a CLI
+      # that stops writing them.
+      - name: Type-check plugins
+        run: |
+          for dir in plugins/*/; do
+            [ -f "$dir/tsconfig.json" ] || continue
+            timeout 120 claude --plugin-dir "$dir" -p ok --max-turns 1 < /dev/null > /dev/null 2>&1 || true
+            if [ ! -f "$dir/.claude-plugin/types/tsconfig.json" ]; then
+              echo "::error::Claude Code did not write the engine types for $dir"
+              exit 1
+            fi
+            npx -y -p typescript@5.9.3 tsc -p "$dir"
+          done

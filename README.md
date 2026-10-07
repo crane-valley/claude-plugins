@@ -28,7 +28,7 @@ claude plugin test plugins/<name>
 
 `claude plugin test` applies only to plugins with a hooks module (`hooks/hooks.json`); a skills-only plugin such as pr-review-cycle is checked with `claude plugin validate` alone.
 
-For editor types, run `/plugin-types plugins/<name>/.claude/types` in a Claude Code session; the folder is git-ignored.
+A plugin's `tsconfig.json` extends `.claude-plugin/types/tsconfig.json` and includes `.claude-plugin/types`; Claude Code writes `<plugin>/.claude-plugin/types/` (the engine's API declarations plus that `tsconfig.json`) whenever it loads the plugin from a local folder, e.g. `claude --plugin-dir plugins/<name>`, which works even without a login: the run exits "Not logged in" but the types are already written. After that, `npx -p typescript@5 tsc -p plugins/<name>` type-checks the plugin (CI does the same); the folder is git-ignored.
 
 ## Contact
 
