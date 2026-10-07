@@ -312,6 +312,43 @@ test('asks the usage endpoint at most once per five minutes', { options: { showC
   expect(calls.count).toBe(2)
 })
 
+test('asks the usage endpoint again after 30 seconds when a request failed', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  const reply = { status: 401, text: '' }
+  const calls = creditsEndpoint(on, reply)
+  const measure = () => $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+
+  await measure()
+  await clock.advance(0)
+  await clock.advance(10_000)
+  await measure()
+  expect(calls.count).toBe(1)
+
+  reply.status = 200
+  reply.text = CREDITS_BODY
+  await clock.advance(30_000)
+  await measure()
+  await clock.advance(0)
+  expect(calls.count).toBe(2)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ text: /^Credits / })).toBeDefined()
+})
+
+test('keeps the five-minute interval when credits are turned off', { options: { showCredits: true } }, async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  const calls = creditsEndpoint(on, { status: 200, text: JSON.stringify({ extra_usage: { is_enabled: false, utilization: 10 } }) })
+  const measure = () => $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+
+  await measure()
+  await clock.advance(0)
+  await clock.advance(60_000)
+  await measure()
+  expect(calls.count).toBe(1)
+})
+
 for (const [name, reply] of [
   ['an error status', { status: 500, text: CREDITS_BODY }],
   ['a body that is not JSON', { status: 200, text: '<html>' }],
