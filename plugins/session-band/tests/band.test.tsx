@@ -117,6 +117,15 @@ test('fills the session rows on resume before any new response', async ($, on) =
   expect(await ui.find({ text: /25%/ })).toBeDefined()
 })
 
+test('fills the session rows on resume when a managed plugin bypasses its SessionStart hook', async ($, on) => {
+  const clock = engine(on, usage([]))
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await clock.advance(0)
+  expect(await ui.find({ text: 'Session' })).toBeDefined()
+  expect(await ui.find({ text: /25%/ })).toBeDefined()
+})
+
 test('drops the cache row after compaction', async ($, on) => {
   engine(on, usage([]))
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 60 })
