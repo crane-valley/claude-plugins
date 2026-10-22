@@ -198,6 +198,7 @@ export const register: Register = (on, options) => {
   const ttlMs = TTL_MS[String(options.cacheTtl)] ?? TTL_MS['5m']!
   const showCost = options.showCost !== false
   const showCredits = options.showCredits === true
+  let bootstrapping = false
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -278,6 +279,21 @@ export const register: Register = (on, options) => {
     }
     const c = await read($, cache)
     const s = await read($, snapshot)
+    // A managed prepend-tier plugin can send classic.SessionStart past this plugin's hook, which
+    // leaves a resumed session with no snapshot until its first response.
+    if (s === null && !bootstrapping) {
+      bootstrapping = true
+      // A render hook may not write state; the snapshot write redraws the band.
+      $.clock.after(0, async () => {
+        try {
+          await refresh($, showCredits)
+        } catch {
+          // The next render asks again.
+        } finally {
+          bootstrapping = false
+        }
+      })
+    }
     const cr = showCredits ? await read($, credits) : null
     if (c === null && s === null) {
       return below
