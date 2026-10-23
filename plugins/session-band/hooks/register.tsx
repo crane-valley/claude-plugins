@@ -201,6 +201,7 @@ export const register: Register = (on, options) => {
   const showCredits = options.showCredits === true
   let bootstrapping = false
   let stepRefreshAt = -Infinity
+  let stepRefresh: { cancel: () => void } | null = null
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -241,13 +242,15 @@ export const register: Register = (on, options) => {
       await update($, cache, () => (cached ? { sentAt, estimated: false } : null))
     }
     // session.measure fires only when a turn ends, so a long turn would keep the fill it started with.
-    if (e.agentId === undefined) {
+    if (e.agentId === undefined && stepRefresh === null) {
       const now = await $.clock.now()
-      if (now - stepRefreshAt >= STEP_REFRESH_MS) {
-        stepRefreshAt = now
-        // Off the step, so the next request is not held up; a failed read keeps the last snapshot.
-        $.clock.after(0, () => refresh($, showCredits).catch(() => {}))
-      }
+      // A step inside the interval is put off to its end, not dropped: the step after it may run long.
+      // Off the step, so the next request is not held up; a failed read keeps the last snapshot.
+      stepRefresh = $.clock.after(Math.max(0, stepRefreshAt + STEP_REFRESH_MS - now), async () => {
+        stepRefresh = null
+        stepRefreshAt = await $.clock.now()
+        await refresh($, showCredits).catch(() => {})
+      })
     }
     return result
   })
@@ -261,6 +264,8 @@ export const register: Register = (on, options) => {
       // The engine has no fill for a compacted window until its next response, which the step
       // refresh then reads at once.
       await update($, snapshot, prev => (prev === null ? null : { ...prev, percent: null, tokens: null, top: [], otherTokens: 0 }))
+      stepRefresh?.cancel()
+      stepRefresh = null
       stepRefreshAt = -Infinity
     }
     return result

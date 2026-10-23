@@ -152,6 +152,29 @@ test('drops the pre-compact context fill and follows the fill within a turn', as
   expect(await stepped.find({ text: /19%  185k \/ 1M/ })).toBeDefined()
 })
 
+test('puts off a step refresh inside the interval to its end instead of dropping it', async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  on('turn.step', async function* () {
+    return { turnId: 't', index: 0, answer: '', toolUses: [], stopReason: 'tool_use' as const, usage: null }
+  })
+  const respond = async () => {
+    const step = $.turn.step({ turnId: 't', index: 0, model: 'm', messageCount: 1 })
+    for await (const _ of step) {
+    }
+    await step.result
+  }
+
+  await respond()
+  await clock.advance(0)
+  measured.context = { tokens: 500_000, window: 1_000_000, percent: 50 }
+  await clock.advance(1000)
+  await respond()
+  await clock.advance(4000)
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ text: /50%  500k \/ 1M/ })).toBeDefined()
+})
+
 test('drops the cache row after compaction', async ($, on) => {
   engine(on, usage([]))
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 60 })
