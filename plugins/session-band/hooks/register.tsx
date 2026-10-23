@@ -9,6 +9,7 @@ const TOP_CATEGORIES = 3
 const SECOND_MS = 1000
 const MINUTE_MS = 60 * SECOND_MS
 const TTL_MS: Record<string, number> = { '5m': 5 * MINUTE_MS, '1h': 60 * MINUTE_MS }
+const STEP_REFRESH_MS = 5 * SECOND_MS
 // The endpoint behind Claude Code's /usage "Usage credits"; undocumented, so every field is checked.
 const CREDITS_URL = 'https://api.anthropic.com/api/oauth/usage'
 const CREDITS_REFRESH_MS = 5 * MINUTE_MS
@@ -199,6 +200,7 @@ export const register: Register = (on, options) => {
   const showCost = options.showCost !== false
   const showCredits = options.showCredits === true
   let bootstrapping = false
+  let stepRefreshAt = -Infinity
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -238,6 +240,15 @@ export const register: Register = (on, options) => {
       const cached = result.usage.cache_read_input_tokens + result.usage.cache_creation_input_tokens > 0
       await update($, cache, () => (cached ? { sentAt, estimated: false } : null))
     }
+    // session.measure fires only when a turn ends, so a long turn would keep the fill it started with.
+    if (e.agentId === undefined) {
+      const now = await $.clock.now()
+      if (now - stepRefreshAt >= STEP_REFRESH_MS) {
+        stepRefreshAt = now
+        // Off the step, so the next request is not held up; a failed read keeps the last snapshot.
+        $.clock.after(0, () => refresh($, showCredits).catch(() => {}))
+      }
+    }
     return result
   })
 
@@ -247,6 +258,10 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     if (e.agentId === undefined && e.trigger !== 'precompute' && result.skip === undefined) {
       await update($, cache, () => null)
+      // The engine has no fill for a compacted window until its next response, which the step
+      // refresh then reads at once.
+      await update($, snapshot, prev => (prev === null ? null : { ...prev, percent: null, tokens: null, top: [], otherTokens: 0 }))
+      stepRefreshAt = -Infinity
     }
     return result
   })

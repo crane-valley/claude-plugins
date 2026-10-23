@@ -126,6 +126,32 @@ test('fills the session rows on resume when a managed plugin bypasses its Sessio
   expect(await ui.find({ text: /25%/ })).toBeDefined()
 })
 
+test('drops the pre-compact context fill and follows the fill within a turn', async ($, on) => {
+  const measured = usage([])
+  const clock = engine(on, measured)
+  on('turn.step', async function* () {
+    return { turnId: 't', index: 0, answer: '', toolUses: [], stopReason: 'tool_use' as const, usage: null }
+  })
+  measured.context = { tokens: 536_000, window: 1_000_000, percent: 54 }
+  await $.session.measure({ context: measured.context, rateLimits: [], changed: ['context'] })
+
+  await $.session.compact({ trigger: 'manual', messages: SUMMARY })
+  measured.context = { window: 1_000_000 }
+  const compacted = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await compacted.find({ text: /54%/ })).toBeUndefined()
+  expect(await compacted.find({ text: / --/ })).toBeDefined()
+  await compacted.unmount()
+
+  measured.context = { tokens: 185_000, window: 1_000_000, percent: 19 }
+  const step = $.turn.step({ turnId: 't', index: 0, model: 'm', messageCount: 1 })
+  for await (const _ of step) {
+  }
+  await step.result
+  await clock.advance(0)
+  const stepped = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await stepped.find({ text: /19%  185k \/ 1M/ })).toBeDefined()
+})
+
 test('drops the cache row after compaction', async ($, on) => {
   engine(on, usage([]))
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 60 })
